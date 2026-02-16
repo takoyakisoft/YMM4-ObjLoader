@@ -19,7 +19,18 @@ namespace ObjLoader.Services.Layers
         private readonly Dictionary<string, List<LayerData>> _childrenIndex = new();
 
         public ObservableCollection<LayerData> Layers { get; } = new ObservableCollection<LayerData>();
-        public int SelectedLayerIndex => _selectedLayerIndex;
+
+        public int SelectedLayerIndex
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _selectedLayerIndex;
+                }
+            }
+        }
+
         public bool IsSwitchingLayer { get; private set; } = false;
 
         public LayerManager()
@@ -34,28 +45,34 @@ namespace ObjLoader.Services.Layers
 
         private void RebuildIndices()
         {
-            _guidIndex.Clear();
-            _childrenIndex.Clear();
-            foreach (var layer in Layers)
+            lock (_lock)
             {
-                _guidIndex[layer.Guid] = layer;
-                var parentGuid = layer.ParentGuid ?? string.Empty;
-                if (!string.IsNullOrEmpty(parentGuid))
+                _guidIndex.Clear();
+                _childrenIndex.Clear();
+                foreach (var layer in Layers)
                 {
-                    if (!_childrenIndex.TryGetValue(parentGuid, out var children))
+                    _guidIndex[layer.Guid] = layer;
+                    var parentGuid = layer.ParentGuid ?? string.Empty;
+                    if (!string.IsNullOrEmpty(parentGuid))
                     {
-                        children = new List<LayerData>();
-                        _childrenIndex[parentGuid] = children;
+                        if (!_childrenIndex.TryGetValue(parentGuid, out var children))
+                        {
+                            children = new List<LayerData>();
+                            _childrenIndex[parentGuid] = children;
+                        }
+                        children.Add(layer);
                     }
-                    children.Add(layer);
                 }
             }
         }
 
         private LayerData? FindByGuid(string guid)
         {
-            _guidIndex.TryGetValue(guid, out var layer);
-            return layer;
+            lock (_lock)
+            {
+                _guidIndex.TryGetValue(guid, out var layer);
+                return layer;
+            }
         }
 
         public void Initialize(ObjLoaderParameter parameter)
@@ -65,143 +82,158 @@ namespace ObjLoader.Services.Layers
 
         public void EnsureLayers(ObjLoaderParameter parameter)
         {
-            var validLayerIds = (parameter.LayerIds ?? "")
-                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                .ToHashSet();
-
-            if (Layers.Count > 0 && validLayerIds.Count > 0 && Layers.Any(l => validLayerIds.Contains(l.Guid)))
+            lock (_lock)
             {
-                var unauthorizedLayers = Layers.Where(l => !validLayerIds.Contains(l.Guid)).ToList();
-                foreach (var layer in unauthorizedLayers)
+                var validLayerIds = (parameter.LayerIds ?? "")
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .ToHashSet();
+
+                if (Layers.Count > 0 && validLayerIds.Count > 0 && Layers.Any(l => validLayerIds.Contains(l.Guid)))
                 {
-                    Layers.Remove(layer);
-                }
-            }
-
-            if (Layers.Any(l => !string.IsNullOrEmpty(l.FilePath)))
-            {
-                var emptyDefaults = Layers
-                    .Where(l => l.Name == "Default" && string.IsNullOrEmpty(l.FilePath))
-                    .ToList();
-
-                foreach (var item in emptyDefaults)
-                {
-                    Layers.Remove(item);
-                }
-            }
-
-            if (Layers.Count == 0 && validLayerIds.Count == 0)
-            {
-                var defaultLayer = new LayerData { Name = "Default" };
-                CopyFromParameter(defaultLayer, parameter);
-                Layers.Add(defaultLayer);
-            }
-
-            if (Layers.Count > 0)
-            {
-                var targetLayer = FindByGuid(parameter.ActiveLayerGuid);
-
-                if (targetLayer != null)
-                {
-                    _activeLayer = targetLayer;
-                    var newIndex = Layers.IndexOf(targetLayer);
-
-                    if (_selectedLayerIndex != newIndex)
+                    var unauthorizedLayers = Layers.Where(l => !validLayerIds.Contains(l.Guid)).ToList();
+                    foreach (var layer in unauthorizedLayers)
                     {
-                        _selectedLayerIndex = newIndex;
-                        parameter.SelectedLayerIndex = newIndex;
+                        Layers.Remove(layer);
                     }
+                }
 
-                    if (!string.IsNullOrEmpty(_activeLayer.FilePath))
+                if (Layers.Any(l => !string.IsNullOrEmpty(l.FilePath)))
+                {
+                    var emptyDefaults = Layers
+                        .Where(l => l.Name == "Default" && string.IsNullOrEmpty(l.FilePath))
+                        .ToList();
+
+                    foreach (var item in emptyDefaults)
                     {
-                        ApplyToParameter(_activeLayer, parameter);
+                        Layers.Remove(item);
                     }
-                    else if (_activeLayer.Name == "Default")
+                }
+
+                if (Layers.Count == 0 && validLayerIds.Count == 0)
+                {
+                    var defaultLayer = new LayerData { Name = "Default" };
+                    CopyFromParameter(defaultLayer, parameter);
+                    Layers.Add(defaultLayer);
+                }
+
+                if (Layers.Count > 0)
+                {
+                    var targetLayer = FindByGuid(parameter.ActiveLayerGuid);
+
+                    if (targetLayer != null)
                     {
-                        CopyFromParameter(_activeLayer, parameter);
+                        _activeLayer = targetLayer;
+                        var newIndex = Layers.IndexOf(targetLayer);
+
+                        if (_selectedLayerIndex != newIndex)
+                        {
+                            _selectedLayerIndex = newIndex;
+                            parameter.SelectedLayerIndex = newIndex;
+                        }
+
+                        if (!string.IsNullOrEmpty(_activeLayer.FilePath))
+                        {
+                            ApplyToParameter(_activeLayer, parameter);
+                        }
+                        else if (_activeLayer.Name == "Default")
+                        {
+                            CopyFromParameter(_activeLayer, parameter);
+                        }
+                    }
+                    else
+                    {
+                        var maxIndex = Layers.Count - 1;
+                        var targetIndex = Math.Clamp(parameter.SelectedLayerIndex, 0, maxIndex);
+
+                        _selectedLayerIndex = targetIndex;
+                        parameter.SelectedLayerIndex = targetIndex;
+                        _activeLayer = Layers[_selectedLayerIndex];
+
+                        parameter.ActiveLayerGuid = _activeLayer.Guid;
+
+                        if (!string.IsNullOrEmpty(_activeLayer.FilePath))
+                        {
+                            ApplyToParameter(_activeLayer, parameter);
+                        }
                     }
                 }
                 else
                 {
-                    var maxIndex = Layers.Count - 1;
-                    var targetIndex = Math.Clamp(parameter.SelectedLayerIndex, 0, maxIndex);
-
-                    _selectedLayerIndex = targetIndex;
-                    parameter.SelectedLayerIndex = targetIndex;
-                    _activeLayer = Layers[_selectedLayerIndex];
-
-                    parameter.ActiveLayerGuid = _activeLayer.Guid;
-
-                    if (!string.IsNullOrEmpty(_activeLayer.FilePath))
-                    {
-                        ApplyToParameter(_activeLayer, parameter);
-                    }
+                    _selectedLayerIndex = -1;
+                    _activeLayer = null;
+                    parameter.ActiveLayerGuid = string.Empty;
                 }
-            }
-            else
-            {
-                _selectedLayerIndex = -1;
-                _activeLayer = null;
-                parameter.ActiveLayerGuid = string.Empty;
             }
         }
 
         public void ChangeLayer(int newIndex, ObjLoaderParameter parameter)
         {
-            if (_selectedLayerIndex == newIndex) return;
+            lock (_lock)
+            {
+                if (_selectedLayerIndex == newIndex) return;
+            }
 
             try
             {
                 SaveActiveLayer(parameter);
 
-                IsSwitchingLayer = true;
-                _selectedLayerIndex = newIndex;
+                lock (_lock)
+                {
+                    IsSwitchingLayer = true;
+                    _selectedLayerIndex = newIndex;
+                }
                 parameter.SelectedLayerIndex = newIndex;
                 LoadActiveLayer(parameter);
             }
             finally
             {
-                IsSwitchingLayer = false;
+                lock (_lock)
+                {
+                    IsSwitchingLayer = false;
+                }
             }
         }
 
         public void SaveActiveLayer(ObjLoaderParameter parameter)
         {
-            if (IsSwitchingLayer || Layers.Count == 0) return;
-
-            LayerData? targetLayer = null;
-
-            if (_activeLayer != null && Layers.Contains(_activeLayer))
+            lock (_lock)
             {
-                targetLayer = _activeLayer;
-            }
-            else if (_selectedLayerIndex >= 0 && _selectedLayerIndex < Layers.Count)
-            {
-                targetLayer = Layers[_selectedLayerIndex];
-            }
+                if (IsSwitchingLayer || Layers.Count == 0) return;
 
-            if (targetLayer != null)
-            {
-                CopyFromParameter(targetLayer, parameter);
+                LayerData? targetLayer = null;
 
-                var frame = (long)parameter.CurrentFrame;
-                var len = (int)(parameter.Duration * parameter.CurrentFPS);
-                var fps = parameter.CurrentFPS;
-
-                var activeWorldId = (int)parameter.WorldId.GetValue(frame, len, fps);
-
-                foreach (var l in Layers)
+                if (_activeLayer != null && Layers.Contains(_activeLayer))
                 {
-                    if (l == targetLayer) continue;
+                    targetLayer = _activeLayer;
+                }
+                else if (_selectedLayerIndex >= 0 && _selectedLayerIndex < Layers.Count)
+                {
+                    targetLayer = Layers[_selectedLayerIndex];
+                }
 
-                    var lWorldId = (int)l.WorldId.GetValue(frame, len, fps);
-                    if (lWorldId == activeWorldId)
+                if (targetLayer != null)
+                {
+                    CopyFromParameter(targetLayer, parameter);
+
+                    var frame = (long)parameter.CurrentFrame;
+                    var len = (int)(parameter.Duration * parameter.CurrentFPS);
+                    var fps = parameter.CurrentFPS;
+
+                    var activeWorldId = (int)parameter.WorldId.GetValue(frame, len, fps);
+
+                    foreach (var l in Layers)
                     {
-                        l.LightX.CopyFrom(parameter.LightX);
-                        l.LightY.CopyFrom(parameter.LightY);
-                        l.LightZ.CopyFrom(parameter.LightZ);
-                        l.LightType = parameter.LightType;
-                        l.IsLightEnabled = parameter.IsLightEnabled;
+                        if (l == targetLayer) continue;
+
+                        var lWorldId = (int)l.WorldId.GetValue(frame, len, fps);
+                        if (lWorldId == activeWorldId)
+                        {
+                            l.LightX.CopyFrom(parameter.LightX);
+                            l.LightY.CopyFrom(parameter.LightY);
+                            l.LightZ.CopyFrom(parameter.LightZ);
+                            l.LightType = parameter.LightType;
+                            l.IsLightEnabled = parameter.IsLightEnabled;
+                        }
                     }
                 }
             }
@@ -211,10 +243,13 @@ namespace ObjLoader.Services.Layers
         {
             if (layers != null)
             {
-                Layers.Clear();
-                foreach (var layer in layers)
+                lock (_lock)
                 {
-                    Layers.Add(layer);
+                    Layers.Clear();
+                    foreach (var layer in layers)
+                    {
+                        Layers.Add(layer);
+                    }
                 }
             }
         }
@@ -402,58 +437,67 @@ namespace ObjLoader.Services.Layers
 
         private void LoadActiveLayer(ObjLoaderParameter parameter)
         {
-            if (Layers.Count == 0) return;
-            var idx = Math.Clamp(_selectedLayerIndex, 0, Layers.Count - 1);
-            var layer = Layers[idx];
+            lock (_lock)
+            {
+                if (Layers.Count == 0) return;
+                var idx = Math.Clamp(_selectedLayerIndex, 0, Layers.Count - 1);
+                var layer = Layers[idx];
 
-            _activeLayer = layer;
-            parameter.ActiveLayerGuid = layer.Guid;
+                _activeLayer = layer;
+                parameter.ActiveLayerGuid = layer.Guid;
 
-            ApplyToParameter(layer, parameter);
+                ApplyToParameter(layer, parameter);
+            }
         }
 
         private void CopyFromParameter(LayerData layer, ObjLoaderParameter parameter)
         {
-            layer.FilePath = parameter.FilePath;
-            layer.BaseColor = parameter.BaseColor;
-            layer.IsLightEnabled = parameter.IsLightEnabled;
-            layer.LightType = parameter.LightType;
-            layer.Projection = parameter.Projection;
+            lock (_lock)
+            {
+                layer.FilePath = parameter.FilePath;
+                layer.BaseColor = parameter.BaseColor;
+                layer.IsLightEnabled = parameter.IsLightEnabled;
+                layer.LightType = parameter.LightType;
+                layer.Projection = parameter.Projection;
 
-            layer.X.CopyFrom(parameter.X);
-            layer.Y.CopyFrom(parameter.Y);
-            layer.Z.CopyFrom(parameter.Z);
-            layer.Scale.CopyFrom(parameter.Scale);
-            layer.RotationX.CopyFrom(parameter.RotationX);
-            layer.RotationY.CopyFrom(parameter.RotationY);
-            layer.RotationZ.CopyFrom(parameter.RotationZ);
-            layer.Fov.CopyFrom(parameter.Fov);
-            layer.LightX.CopyFrom(parameter.LightX);
-            layer.LightY.CopyFrom(parameter.LightY);
-            layer.LightZ.CopyFrom(parameter.LightZ);
-            layer.WorldId.CopyFrom(parameter.WorldId);
+                layer.X.CopyFrom(parameter.X);
+                layer.Y.CopyFrom(parameter.Y);
+                layer.Z.CopyFrom(parameter.Z);
+                layer.Scale.CopyFrom(parameter.Scale);
+                layer.RotationX.CopyFrom(parameter.RotationX);
+                layer.RotationY.CopyFrom(parameter.RotationY);
+                layer.RotationZ.CopyFrom(parameter.RotationZ);
+                layer.Fov.CopyFrom(parameter.Fov);
+                layer.LightX.CopyFrom(parameter.LightX);
+                layer.LightY.CopyFrom(parameter.LightY);
+                layer.LightZ.CopyFrom(parameter.LightZ);
+                layer.WorldId.CopyFrom(parameter.WorldId);
+            }
         }
 
         private void ApplyToParameter(LayerData layer, ObjLoaderParameter parameter)
         {
-            parameter.FilePath = layer.FilePath;
-            parameter.BaseColor = layer.BaseColor;
-            parameter.IsLightEnabled = layer.IsLightEnabled;
-            parameter.LightType = layer.LightType;
-            parameter.Projection = layer.Projection;
+            lock (_lock)
+            {
+                parameter.FilePath = layer.FilePath;
+                parameter.BaseColor = layer.BaseColor;
+                parameter.IsLightEnabled = layer.IsLightEnabled;
+                parameter.LightType = layer.LightType;
+                parameter.Projection = layer.Projection;
 
-            parameter.X.CopyFrom(layer.X);
-            parameter.Y.CopyFrom(layer.Y);
-            parameter.Z.CopyFrom(layer.Z);
-            parameter.Scale.CopyFrom(layer.Scale);
-            parameter.RotationX.CopyFrom(layer.RotationX);
-            parameter.RotationY.CopyFrom(layer.RotationY);
-            parameter.RotationZ.CopyFrom(layer.RotationZ);
-            parameter.Fov.CopyFrom(layer.Fov);
-            parameter.LightX.CopyFrom(layer.LightX);
-            parameter.LightY.CopyFrom(layer.LightY);
-            parameter.LightZ.CopyFrom(layer.LightZ);
-            parameter.WorldId.CopyFrom(layer.WorldId);
+                parameter.X.CopyFrom(layer.X);
+                parameter.Y.CopyFrom(layer.Y);
+                parameter.Z.CopyFrom(layer.Z);
+                parameter.Scale.CopyFrom(layer.Scale);
+                parameter.RotationX.CopyFrom(layer.RotationX);
+                parameter.RotationY.CopyFrom(layer.RotationY);
+                parameter.RotationZ.CopyFrom(layer.RotationZ);
+                parameter.Fov.CopyFrom(layer.Fov);
+                parameter.LightX.CopyFrom(layer.LightX);
+                parameter.LightY.CopyFrom(layer.LightY);
+                parameter.LightZ.CopyFrom(parameter.LightZ);
+                parameter.WorldId.CopyFrom(layer.WorldId);
+            }
         }
     }
 }

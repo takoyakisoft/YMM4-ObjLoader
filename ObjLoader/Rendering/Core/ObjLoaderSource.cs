@@ -268,8 +268,6 @@ namespace ObjLoader.Rendering.Core
 
             var device = _devices.D3D.Device;
             if (device == null) return;
-
-            var usedPaths = new HashSet<string>();
         }
 
         private void PrepareDynamicTextures(IEnumerable<(LayerData Data, GpuResourceCacheItem Resource, LayerState State)> layers)
@@ -302,6 +300,7 @@ namespace ObjLoader.Rendering.Core
 
             var activeGuid = _parameter.ActiveLayerGuid;
             int activeWorldId = 0;
+            var previousStates = Volatile.Read(ref _layerStates);
 
             foreach (var layer in _parameter.Layers)
             {
@@ -323,6 +322,9 @@ namespace ObjLoader.Rendering.Core
 
                 var visibleParts = layer.VisibleParts;
                 HashSet<int>? copiedVisibleParts = visibleParts != null ? new HashSet<int>(visibleParts) : null;
+
+                previousStates.TryGetValue(layer.Guid, out var oldState);
+                var partMaterials = CreatePartMaterials(layer, oldState.PartMaterials);
 
                 var layerState = new LayerState
                 {
@@ -357,17 +359,7 @@ namespace ObjLoader.Rendering.Core
                     IsVisible = layer.IsVisible,
                     VisibleParts = copiedVisibleParts,
                     ParentGuid = layer.ParentGuid,
-                    PartMaterials = layer.PartMaterials?.Count > 0 
-                        ? layer.PartMaterials.ToImmutableDictionary(
-                            k => k.Key, 
-                            v => new PartMaterialState 
-                            { 
-                                Roughness = v.Value.Roughness, 
-                                Metallic = v.Value.Metallic, 
-                                BaseColor = v.Value.BaseColor, 
-                                TexturePath = v.Value.TexturePath 
-                            }) 
-                        : null
+                    PartMaterials = partMaterials
                 };
 
                 _preCalcStates.Add((layer.Guid, layerState, layer));
@@ -385,8 +377,7 @@ namespace ObjLoader.Rendering.Core
 
             _newLayerStatesTemp.Clear();
             bool layersChanged = false;
-            var previousStates = Volatile.Read(ref _layerStates);
-
+            
             foreach (var item in _preCalcStates)
             {
                 var layerState = item.State;
@@ -414,6 +405,45 @@ namespace ObjLoader.Rendering.Core
 
             var newLayerStates = layersChanged ? _newLayerStatesTemp.ToImmutableDictionary() : previousStates;
             return (activeWorldId, newLayerStates, layersChanged);
+        }
+
+        private ImmutableDictionary<int, PartMaterialState>? CreatePartMaterials(LayerData layer, ImmutableDictionary<int, PartMaterialState>? oldPartMaterials)
+        {
+            var newMaterials = layer.PartMaterials;
+            if (newMaterials == null || newMaterials.Count == 0) return null;
+
+            if (oldPartMaterials != null && oldPartMaterials.Count == newMaterials.Count)
+            {
+                bool isSame = true;
+                foreach (var kvp in newMaterials)
+                {
+                    if (!oldPartMaterials.TryGetValue(kvp.Key, out var oldState))
+                    {
+                        isSame = false;
+                        break;
+                    }
+                    var newState = kvp.Value;
+                    if (Math.Abs(newState.Roughness - oldState.Roughness) > RenderingConstants.StateComparisonEpsilon ||
+                        Math.Abs(newState.Metallic - oldState.Metallic) > RenderingConstants.StateComparisonEpsilon ||
+                        newState.BaseColor != oldState.BaseColor ||
+                        !string.Equals(newState.TexturePath, oldState.TexturePath, StringComparison.Ordinal))
+                    {
+                        isSame = false;
+                        break;
+                    }
+                }
+                if (isSame) return oldPartMaterials;
+            }
+
+            return newMaterials.ToImmutableDictionary(
+                k => k.Key,
+                v => new PartMaterialState
+                {
+                    Roughness = v.Value.Roughness,
+                    Metallic = v.Value.Metallic,
+                    BaseColor = v.Value.BaseColor,
+                    TexturePath = v.Value.TexturePath
+                });
         }
 
         private void ProcessVisibilityHierarchy(ImmutableDictionary<string, LayerState> newLayerStates)
