@@ -512,4 +512,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>テクスチャ</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>テクスチャ</value></data>
 <data name="Image_File" xml:space="preserve"><value>画像ファイル</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>キャッシュ管理</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>場所</value></data>
+<data name="CacheSize" xml:space="preserve"><value>サイズ</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>分割</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>最終アクセス</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>クリーンアップ</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>削除</value></data>
+<data name="MoveCache" xml:space="preserve"><value>移動</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>本当に削除しますか？</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>存在しないモデルのキャッシュを全て削除しますか？</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>キャッシュインデックスが破損しています。再構築します。</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>分割キャッシュ有効</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>HDD向け最適化</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>キャッシュ更新</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (分割)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (単一)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>キャッシュの移動</value></data>
+<data name="OldPath" xml:space="preserve"><value>現在のパスPrefix</value></data>
+<data name="NewPath" xml:space="preserve"><value>新しいパスPrefix</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>キャッシュのパスを移動しますか？\nインデックス内のパスが更新されます。\n移動元に物理フォルダが存在する場合、それも移動されます。\n(対象: OldPathで始まるエントリ)</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>移動が完了しました。</value></data>
+<data name="Convert" xml:space="preserve"><value>変換</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>キャッシュ形式を変換します (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>物理フォルダの移動に失敗しました。アクセス権限や重複を確認してください。\n(キャッシュ移動処理は継続されます)</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>エラー</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>キャッシュインデックスの読み込みに失敗しました。インデックスを再構築します。</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>キャッシュの削除に失敗しました: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>キャッシュのクリーンアップ中にエラーが発生しました: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>キャッシュの移動に失敗しました: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>キャッシュ移動のロールバックに失敗しました: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>キャッシュの変換に失敗しました: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>キャッシュエントリが上限 ({0}) に達したため、古いエントリを削除しました。</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>ディスクタイプの検出に失敗しました: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>初期化に失敗しました: {0}</value></data>
 </root>

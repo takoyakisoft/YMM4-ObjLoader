@@ -512,4 +512,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>纹理</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>纹理</value></data>
 <data name="Image_File" xml:space="preserve"><value>Image File</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>缓存管理</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>位置</value></data>
+<data name="CacheSize" xml:space="preserve"><value>大小</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>分割</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>最后访问</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>清理</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>删除</value></data>
+<data name="MoveCache" xml:space="preserve"><value>移动</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>真的要删除吗？</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>删除所有孤立缓存？</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>缓存索引已损坏。正在重建。</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>启用分割缓存</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>针对HDD优化</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>刷新磁盘缓存</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (分割)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (单一)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>移动缓存</value></data>
+<data name="OldPath" xml:space="preserve"><value>当前路径前缀</value></data>
+<data name="NewPath" xml:space="preserve"><value>新路径前缀</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>it will also be moved.\n(Target: Entries starting with OldPath)</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>搬迁完成。</value></data>
+<data name="Convert" xml:space="preserve"><value>转换</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>转换缓存格式 (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>无法移动物理文件夹。请检查权限或重复项。\n（缓存重新定位功能将继续）</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>错误</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>缓存索引加载失败。正在重建索引。</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>删除缓存失败: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>缓存清理时出错: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>移动缓存失败: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>缓存移动回滚失败: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>缓存转换失败: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>缓存条目达到上限 ({0})，已删除旧条目。</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>磁盘类型检测失败: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>初始化失败: {0}</value></data>
 </root>

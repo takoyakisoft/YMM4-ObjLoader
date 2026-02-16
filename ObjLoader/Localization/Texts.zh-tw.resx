@@ -512,4 +512,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>紋理</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>紋理</value></data>
 <data name="Image_File" xml:space="preserve"><value>Image File</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>快取管理</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>位置</value></data>
+<data name="CacheSize" xml:space="preserve"><value>大小</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>分割</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>最後存取</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>清理</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>刪除</value></data>
+<data name="MoveCache" xml:space="preserve"><value>移動</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>真的要刪除嗎？</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>刪除所有孤立快取？</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>快取索引已損壞。正在重建。</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>啟用分割快取</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>針對HDD最佳化</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>刷新磁碟快取</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (分割)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (單一)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>移動快取</value></data>
+<data name="OldPath" xml:space="preserve"><value>目前路徑前綴</value></data>
+<data name="NewPath" xml:space="preserve"><value>新路徑前綴</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>确定要重新定位缓存路径吗？\n索引中的路径将被更新。\n如果源位置存在物理文件夹，它也将被移动。\n（目标：以OldPath开头的条目）</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>搬遷完成。</value></data>
+<data name="Convert" xml:space="preserve"><value>轉換</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>轉換快取格式 (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>無法移動實體資料夾。請檢查權限或重複項目。\n（快取重新定位功能將繼續）</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>錯誤</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>快取索引載入失敗。正在重建索引。</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>刪除快取失敗: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>快取清理時發生錯誤: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>移動快取失敗: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>快取移動回滾失敗: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>快取轉換失敗: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>快取條目達到上限 ({0})，已刪除舊條目。</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>磁碟類型檢測失敗: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>初始化失敗: {0}</value></data>
 </root>

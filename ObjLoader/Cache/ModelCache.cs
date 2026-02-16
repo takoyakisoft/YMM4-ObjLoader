@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Text;
 using ObjLoader.Core;
 using ObjLoader.Settings;
@@ -10,24 +11,199 @@ namespace ObjLoader.Cache
     {
         private const int MaxThumbnailSize = 10 * 1024 * 1024;
         private const int MaxTexturePathLength = 32_767;
+        private const string CacheDirName = ".cache";
 
         public bool TryLoad(string path, DateTime originalTimestamp, string parserId, int parserVersion, string pluginVersion, out ObjModel model)
         {
             model = new ObjModel();
-            var cachePath = path + ".bin";
-
-            if (!File.Exists(cachePath)) return false;
+            byte[]? loadedThumbnail = null;
+            string? legacyMigrationPath = null;
 
             try
             {
-                using var fs = new FileStream(cachePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
-                using var br = new BinaryReader(fs);
+                var index = ModelSettings.Instance.GetCacheIndex();
+                CacheIndex.CacheEntry? entry = null; 
+                string cachePath = string.Empty;
+                bool isSplit = false;
 
-                var header = ReadHeader(br);
-                if (!header.IsValid(originalTimestamp.ToBinary(), path, parserId, parserVersion, pluginVersion)) return false;
+                if (index.Entries.TryGetValue(path, out var e))
+                {
+                    string root = Path.GetDirectoryName(path) ?? string.Empty;
+                    string cacheDir = Path.Combine(root, CacheDirName, e.ModelHash);
+                    if (Directory.Exists(cacheDir))
+                    {
+                        entry = e;
+                        cachePath = cacheDir;
+                        isSplit = e.IsSplit;
+                    }
+                }
 
-                model = ReadBody(br, fs);
+                if (string.IsNullOrEmpty(cachePath))
+                {
+                    string legacyPath = path + ".bin";
+                    if (File.Exists(legacyPath))
+                    {
+                        cachePath = legacyPath;
+                        legacyMigrationPath = legacyPath;
+                        isSplit = false;
+                    }
+                    else
+                    {
+                        string hash = ComputePathHash(path);
+                        string root = Path.GetDirectoryName(path) ?? string.Empty;
+                        string possibleDir = Path.Combine(root, CacheDirName, hash);
+                        
+                        if (Directory.Exists(possibleDir))
+                        {
+                            cachePath = possibleDir;
+                            if (File.Exists(Path.Combine(cachePath, "header.bin")))
+                            {
+                                isSplit = true; 
+                            }
+                            else if (File.Exists(Path.Combine(cachePath, "model.bin")))
+                            {
+                                isSplit = false;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                Stream stream;
+                if (isSplit)
+                {
+                    stream = new MultiFileStream(cachePath);
+                }
+                else
+                {
+                    string filePath = Directory.Exists(cachePath) ? Path.Combine(cachePath, "model.bin") : cachePath;
+                    stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+                }
+
+                string fileHash = ComputeFileHash(path);
+
+                using (stream)
+                using (var br = new BinaryReader(stream))
+                {
+                    var header = ReadHeader(br);
+                    if (!header.IsValid(originalTimestamp.ToBinary(), path, parserId, parserVersion, pluginVersion, fileHash)) return false;
+
+                    model = ReadBody(br, stream, out loadedThumbnail);
+
+                    if (model.Vertices.Length > 0 && !index.Entries.ContainsKey(path) && legacyMigrationPath == null)
+                    {
+                        try
+                        {
+                            long totalSize = 0;
+                            int partsCount = 1;
+                            
+                            if (isSplit)
+                            {
+                                var files = Directory.GetFiles(cachePath, "part.*.bin");
+                                foreach (var f in files) totalSize += new FileInfo(f).Length;
+                                partsCount = files.Length;
+                            }
+                            else
+                            {
+                                string filePath = Directory.Exists(cachePath) ? Path.Combine(cachePath, "model.bin") : cachePath;
+                                if (File.Exists(filePath)) totalSize = new FileInfo(filePath).Length;
+                            }
+
+                            string hash = ComputePathHash(path);
+                            index.Entries[path] = new CacheIndex.CacheEntry
+                            {
+                                ModelHash = hash,
+                                OriginalPath = path,
+                                CacheRootPath = Path.Combine(CacheDirName, hash),
+                                TotalSize = totalSize,
+                                LastAccessTime = DateTime.Now,
+                                IsSplit = isSplit,
+                                PartsCount = partsCount
+                            };
+                            ModelSettings.Instance.SaveCacheIndex(index);
+                        }
+                        catch { }
+                    }
+                }
+
+                if (legacyMigrationPath != null && model.Vertices.Length > 0 && loadedThumbnail != null)
+                {
+                    try
+                    {
+                        Save(path, model, loadedThumbnail, originalTimestamp, parserId, parserVersion, pluginVersion);
+                        if (File.Exists(legacyMigrationPath))
+                        {
+                            File.Delete(legacyMigrationPath);
+                        }
+                    }
+                    catch { }
+                }
+
                 return model.Vertices.Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public bool Convert(string path, bool toSplit)
+        {
+            try
+            {
+                var index = ModelSettings.Instance.GetCacheIndex();
+                string cacheFile = string.Empty;
+
+                if (index.Entries.TryGetValue(path, out var e))
+                {
+                    if (e.IsSplit == toSplit) return true;
+
+                    string root = Path.GetDirectoryName(path) ?? string.Empty;
+                    string cacheDir = Path.Combine(root, CacheDirName, e.ModelHash);
+                    if (Directory.Exists(cacheDir))
+                    {
+                        if (e.IsSplit)
+                        {
+                            cacheFile = Path.Combine(cacheDir, "part.0.bin");
+                        }
+                        else
+                        {
+                            cacheFile = Path.Combine(cacheDir, "model.bin");
+                        }
+                    }
+                }
+
+                Stream stream;
+                if (e!.IsSplit)
+                {
+                    stream = new MultiFileStream(Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, CacheDirName, e.ModelHash));
+                }
+                else
+                {
+                    stream = new FileStream(cacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+                }
+
+                CacheHeader header;
+                byte[] thumbnail;
+                ObjModel model;
+
+                using (stream)
+                using (var br = new BinaryReader(stream))
+                {
+                    header = ReadHeader(br);
+                    model = ReadBody(br, stream, out thumbnail);
+                }
+
+                Save(path, model, thumbnail, DateTime.FromBinary(header.Timestamp), header.ParserId, header.ParserVersion, header.PluginVersion, toSplit);
+                
+                return true;
             }
             catch
             {
@@ -37,16 +213,57 @@ namespace ObjLoader.Cache
 
         public byte[] GetThumbnail(string path, DateTime originalTimestamp, string parserId, int parserVersion, string pluginVersion)
         {
-            var cachePath = path + ".bin";
-            if (!File.Exists(cachePath)) return Array.Empty<byte>();
-
             try
             {
-                using var fs = new FileStream(cachePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+                var index = ModelSettings.Instance.GetCacheIndex();
+                string cacheFile = string.Empty;
+
+                if (index.Entries.TryGetValue(path, out var e))
+                {
+                    string root = Path.GetDirectoryName(path) ?? string.Empty;
+                    string cacheDir = Path.Combine(root, CacheDirName, e.ModelHash);
+                    if (Directory.Exists(cacheDir))
+                    {
+                        if (e.IsSplit)
+                        {
+                            cacheFile = Path.Combine(cacheDir, "part.0.bin");
+                        }
+                        else
+                        {
+                            cacheFile = Path.Combine(cacheDir, "model.bin");
+                        }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(cacheFile) || !File.Exists(cacheFile))
+                {
+                    string legacyPath = path + ".bin";
+                    if (File.Exists(legacyPath))
+                    {
+                        cacheFile = legacyPath;
+                    }
+                    else
+                    {
+                        string hash = ComputePathHash(path);
+                        string root = Path.GetDirectoryName(path) ?? string.Empty;
+                        string possibleDir = Path.Combine(root, CacheDirName, hash);
+                        if (Directory.Exists(possibleDir))
+                        {
+                            if (File.Exists(Path.Combine(possibleDir, "part.0.bin"))) cacheFile = Path.Combine(possibleDir, "part.0.bin");
+                            else if (File.Exists(Path.Combine(possibleDir, "model.bin"))) cacheFile = Path.Combine(possibleDir, "model.bin");
+                        }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(cacheFile) || !File.Exists(cacheFile)) return Array.Empty<byte>();
+
+                string fileHash = ComputeFileHash(path);
+
+                using var fs = new FileStream(cacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
                 using var br = new BinaryReader(fs);
 
                 var header = ReadHeader(br);
-                if (!header.IsValid(originalTimestamp.ToBinary(), path, parserId, parserVersion, pluginVersion)) return Array.Empty<byte>();
+                if (!header.IsValid(originalTimestamp.ToBinary(), path, parserId, parserVersion, pluginVersion, fileHash)) return Array.Empty<byte>();
 
                 int thumbLen = br.ReadInt32();
                 if (thumbLen > 0 && thumbLen <= MaxThumbnailSize)
@@ -61,24 +278,109 @@ namespace ObjLoader.Cache
             return Array.Empty<byte>();
         }
 
-        public void Save(string path, ObjModel model, byte[] thumbnail, DateTime originalTimestamp, string parserId, int parserVersion, string pluginVersion)
+        public void Save(string path, ObjModel model, byte[] thumbnail, DateTime originalTimestamp, string parserId, int parserVersion, string pluginVersion, bool? forceSplit = null)
         {
-            var cachePath = path + ".bin";
-            var tempPath = cachePath + ".tmp";
-
             try
             {
-                var header = new CacheHeader(originalTimestamp.ToBinary(), path, parserId, parserVersion, pluginVersion);
-                WriteCacheFile(tempPath, header, model, thumbnail);
+                string root = Path.GetDirectoryName(path) ?? string.Empty;
+                string hash = ComputePathHash(path);
+                string cacheDir = Path.Combine(root, CacheDirName);
+                string modelCacheDir = Path.Combine(cacheDir, hash);
 
-                File.Move(tempPath, cachePath, true);
+                if (!Directory.Exists(cacheDir))
+                {
+                    var di = Directory.CreateDirectory(cacheDir);
+                    di.Attributes |= FileAttributes.Hidden;
+                }
+                if (!Directory.Exists(modelCacheDir))
+                {
+                    Directory.CreateDirectory(modelCacheDir);
+                }
+
+                bool isSplit = forceSplit ?? (DiskTypeDetector.GetDiskType(root) == DiskType.Hdd);
+                
+                string fileHash = ComputeFileHash(path);
+                var header = new CacheHeader(originalTimestamp.ToBinary(), path, parserId, parserVersion, pluginVersion, fileHash);
+
+                long totalSize = 0;
+                int partsCount = 1;
+
+                if (!isSplit)
+                {
+                    string tempPath = Path.Combine(modelCacheDir, "model.bin.tmp");
+                    string finalPath = Path.Combine(modelCacheDir, "model.bin");
+                    
+                    WriteCacheFileSingle(tempPath, header, model, thumbnail);
+                    File.Move(tempPath, finalPath, true);
+                    totalSize = new FileInfo(finalPath).Length;
+                    
+                    CleanUpSplitFiles(modelCacheDir);
+                }
+                else
+                {
+                    CleanUpSplitFiles(modelCacheDir);
+                    partsCount = WriteCacheFileSplit(modelCacheDir, header, model, thumbnail, out totalSize);
+                    string singleFile = Path.Combine(modelCacheDir, "model.bin");
+                    if (File.Exists(singleFile)) File.Delete(singleFile);
+                }
+
+                var index = ModelSettings.Instance.GetCacheIndex();
+                index.Entries[path] = new CacheIndex.CacheEntry
+                {
+                    ModelHash = hash,
+                    OriginalPath = path,
+                    CacheRootPath = Path.Combine(CacheDirName, hash),
+                    TotalSize = totalSize,
+                    LastAccessTime = DateTime.Now,
+                    IsSplit = isSplit,
+                    PartsCount = partsCount
+                };
+                ModelSettings.Instance.SaveCacheIndex(index);
+
+                string legacyPath = path + ".bin";
+                if (File.Exists(legacyPath))
+                {
+                    File.Delete(legacyPath);
+                }
             }
             catch
             {
-                if (File.Exists(tempPath))
+            }
+        }
+
+        private void CleanUpSplitFiles(string dir)
+        {
+            var files = Directory.GetFiles(dir, "part.*.bin");
+            foreach (var f in files) File.Delete(f);
+        }
+
+        private string ComputePathHash(string path)
+        {
+            using (var md5 = MD5.Create())
+            {
+                byte[] inputBytes = Encoding.UTF8.GetBytes(path.ToLowerInvariant());
+                byte[] hashBytes = md5.ComputeHash(inputBytes);
+                var sb = new StringBuilder();
+                for (int i = 0; i < hashBytes.Length; i++)
                 {
-                    try { File.Delete(tempPath); } catch { }
+                    sb.Append(hashBytes[i].ToString("x2"));
                 }
+                return sb.ToString(); 
+            }
+        }
+
+        private string ComputeFileHash(string path)
+        {
+            try
+            {
+                using var sha = SHA256.Create();
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+                var hash = sha.ComputeHash(stream);
+                return BitConverter.ToString(hash).Replace("-", "");
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
@@ -91,18 +393,32 @@ namespace ObjLoader.Cache
             string parserId = br.ReadString();
             int parserVersion = br.ReadInt32();
             string pluginVersion = br.ReadString();
+            string fileHash = string.Empty;
 
-            return new CacheHeader(signature, version, timestamp, path, parserId, parserVersion, pluginVersion);
+            if (version >= 6)
+            {
+                fileHash = br.ReadString();
+            }
+
+            return new CacheHeader(signature, version, timestamp, path, parserId, parserVersion, pluginVersion, fileHash);
         }
 
-        private unsafe ObjModel ReadBody(BinaryReader br, FileStream fs)
+        private unsafe ObjModel ReadBody(BinaryReader br, Stream stream, out byte[] thumbnail)
         {
             var limits = ModelSettings.Instance;
 
             int thumbLen = br.ReadInt32();
             if (thumbLen < 0 || thumbLen > MaxThumbnailSize)
                 throw new InvalidDataException($"Invalid thumbnail length: {thumbLen}");
-            if (thumbLen > 0) fs.Seek(thumbLen, SeekOrigin.Current);
+            
+            if (thumbLen > 0)
+            {
+                thumbnail = br.ReadBytes(thumbLen);
+            }
+            else
+            {
+                thumbnail = Array.Empty<byte>();
+            }
 
             int vCount = br.ReadInt32();
             int iCount = br.ReadInt32();
@@ -132,29 +448,35 @@ namespace ObjLoader.Cache
             Vector3 center = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
             float scale = br.ReadSingle();
 
-            long requiredVertexBytes = (long)vCount * sizeof(ObjVertex);
-            long requiredIndexBytes = (long)iCount * sizeof(int);
-            long remainingBytes = fs.Length - fs.Position;
-            if (remainingBytes < requiredVertexBytes + requiredIndexBytes)
-                throw new InvalidDataException($"File too small: need {requiredVertexBytes + requiredIndexBytes} bytes, have {remainingBytes}");
-
             var vertices = GC.AllocateUninitializedArray<ObjVertex>(vCount, true);
             var indices = GC.AllocateUninitializedArray<int>(iCount, true);
 
             fixed (ObjVertex* pV = vertices)
             {
                 var span = new Span<byte>(pV, vCount * sizeof(ObjVertex));
-                int bytesRead = fs.Read(span);
-                if (bytesRead != span.Length)
-                    throw new InvalidDataException($"Expected {span.Length} vertex bytes, read {bytesRead}");
+                int totalRead = 0;
+                while (totalRead < span.Length)
+                {
+                    int read = stream.Read(span.Slice(totalRead));
+                    if (read == 0) break;
+                    totalRead += read;
+                }
+                if (totalRead != span.Length)
+                    throw new InvalidDataException($"Expected {span.Length} vertex bytes, read {totalRead}");
             }
 
             fixed (int* pI = indices)
             {
                 var span = new Span<byte>(pI, iCount * sizeof(int));
-                int bytesRead = fs.Read(span);
-                if (bytesRead != span.Length)
-                    throw new InvalidDataException($"Expected {span.Length} index bytes, read {bytesRead}");
+                int totalRead = 0;
+                while (totalRead < span.Length)
+                {
+                    int read = stream.Read(span.Slice(totalRead));
+                    if (read == 0) break;
+                    totalRead += read;
+                }
+                if (totalRead != span.Length)
+                    throw new InvalidDataException($"Expected {span.Length} index bytes, read {totalRead}");
             }
 
             return new ObjModel
@@ -167,20 +489,31 @@ namespace ObjLoader.Cache
             };
         }
 
-        private unsafe void WriteCacheFile(string tempPath, CacheHeader header, ObjModel model, byte[] thumbnail)
+        private unsafe void WriteCacheFileSingle(string path, CacheHeader header, ObjModel model, byte[] thumbnail)
         {
-            var limits = ModelSettings.Instance;
-
-            if (model.Vertices.Length > limits.MaxVertices)
-                throw new InvalidOperationException($"Vertex count {model.Vertices.Length} exceeds limit {limits.MaxVertices}");
-            if (model.Indices.Length > limits.MaxIndices)
-                throw new InvalidOperationException($"Index count {model.Indices.Length} exceeds limit {limits.MaxIndices}");
-            if (model.Parts.Count > limits.MaxParts)
-                throw new InvalidOperationException($"Part count {model.Parts.Count} exceeds limit {limits.MaxParts}");
-
-            using var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
             using var bw = new BinaryWriter(fs);
+            WriteData(bw, header, model, thumbnail);
+        }
 
+        private unsafe int WriteCacheFileSplit(string dir, CacheHeader header, ObjModel model, byte[] thumbnail, out long totalSize)
+        {
+            totalSize = 0;
+            int partIndex = 0;
+            const int ChunkSize = 256 * 1024;
+            
+            using (var splitter = new SplitStream(dir, ChunkSize))
+            using (var bw = new BinaryWriter(splitter))
+            {
+                WriteData(bw, header, model, thumbnail);
+                totalSize = splitter.TotalLength;
+                partIndex = splitter.PartCount;
+            }
+            return partIndex;
+        }
+
+        private unsafe void WriteData(BinaryWriter bw, CacheHeader header, ObjModel model, byte[] thumbnail)
+        {
             bw.Write(header.Signature);
             bw.Write(header.Version);
             bw.Write(header.Timestamp);
@@ -188,6 +521,7 @@ namespace ObjLoader.Cache
             bw.Write(header.ParserId);
             bw.Write(header.ParserVersion);
             bw.Write(header.PluginVersion);
+            bw.Write(header.FileHash);
 
             bw.Write(thumbnail.Length);
             if (thumbnail.Length > 0)
@@ -227,6 +561,201 @@ namespace ObjLoader.Cache
             {
                 var span = new ReadOnlySpan<byte>(pI, model.Indices.Length * sizeof(int));
                 bw.Write(span);
+            }
+        }
+
+        private class MultiFileStream : Stream
+        {
+            private readonly string _baseDir;
+            private int _currentIndex = 0;
+            private FileStream? _currentStream;
+            private long _position = 0;
+            
+            public MultiFileStream(string baseDir)
+            {
+                _baseDir = baseDir;
+                OpenNextStream();
+            }
+
+            private void OpenNextStream()
+            {
+                _currentStream?.Dispose();
+                string path = Path.Combine(_baseDir, $"part.{_currentIndex}.bin");
+                if (File.Exists(path))
+                {
+                    _currentStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+                }
+                else
+                {
+                    _currentStream = null;
+                }
+            }
+
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => _position; set => throw new NotSupportedException(); }
+
+            public override void Flush() { }
+
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                return Read(new Span<byte>(buffer, offset, count));
+            }
+
+            public override int Read(Span<byte> buffer)
+            {
+                if (_currentStream == null) return 0;
+
+                int totalRead = 0;
+                while (totalRead < buffer.Length)
+                {
+                    int read = _currentStream.Read(buffer.Slice(totalRead));
+                    if (read == 0)
+                    {
+                        _currentIndex++;
+                        OpenNextStream();
+                        if (_currentStream == null) break;
+                    }
+                    else
+                    {
+                        totalRead += read;
+                        _position += read;
+                    }
+                }
+                return totalRead;
+            }
+
+            public override long Seek(long offset, SeekOrigin origin)
+            {
+                if (origin == SeekOrigin.Begin)
+                {
+                    long delta = offset - _position;
+                    return Seek(delta, SeekOrigin.Current);
+                }
+
+                if (origin == SeekOrigin.Current && offset >= 0)
+                {
+                     long toSkip = offset;
+                     while (toSkip > 0)
+                     {
+                         if (_currentStream == null) break;
+                         long currentRem = _currentStream.Length - _currentStream.Position;
+                         if (toSkip <= currentRem)
+                         {
+                             _currentStream.Seek(toSkip, SeekOrigin.Current);
+                             _position += toSkip;
+                             toSkip = 0;
+                         }
+                         else
+                         {
+                             _currentStream.Seek(0, SeekOrigin.End);
+                             _position += currentRem;
+                             toSkip -= currentRem;
+                             _currentIndex++;
+                             OpenNextStream();
+                         }
+                     }
+                     return _position;
+                }
+                throw new NotSupportedException();
+            }
+
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    try
+                    {
+                        _currentStream?.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+                base.Dispose(disposing);
+            }
+        }
+
+        private class SplitStream : Stream
+        {
+            private readonly string _dir;
+            private readonly int _chunkSize;
+            private int _partIndex = 0;
+            private FileStream? _currentStream;
+            private long _totalLength = 0;
+
+            public long TotalLength => _totalLength;
+            public int PartCount => _partIndex;
+
+            public SplitStream(string dir, int chunkSize)
+            {
+                _dir = dir;
+                _chunkSize = chunkSize;
+                NextPart();
+            }
+
+            private void NextPart()
+            {
+                _currentStream?.Dispose();
+                string path = Path.Combine(_dir, $"part.{_partIndex}.bin");
+                _currentStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+                _partIndex++;
+            }
+
+            public override bool CanRead => false;
+            public override bool CanSeek => false;
+            public override bool CanWrite => true;
+            public override long Length => _totalLength;
+            public override long Position { get => _totalLength; set => throw new NotSupportedException(); }
+
+            public override void Flush() => _currentStream?.Flush();
+
+            public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+
+            public override void Write(byte[] buffer, int offset, int count)
+            {
+                Write(new ReadOnlySpan<byte>(buffer, offset, count));
+            }
+
+            public override void Write(ReadOnlySpan<byte> buffer)
+            {
+                int written = 0;
+                while (written < buffer.Length)
+                {
+                    if (_currentStream!.Length >= _chunkSize)
+                    {
+                        NextPart();
+                    }
+
+                    int remainingInChunk = (int)(_chunkSize - _currentStream!.Length);
+                    int toWrite = Math.Min(remainingInChunk, buffer.Length - written);
+                    
+                    _currentStream!.Write(buffer.Slice(written, toWrite));
+                    written += toWrite;
+                    _totalLength += toWrite;
+                }
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    try
+                    {
+                        _currentStream?.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+                base.Dispose(disposing);
             }
         }
     }

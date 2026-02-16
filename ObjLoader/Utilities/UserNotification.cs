@@ -8,6 +8,11 @@ namespace ObjLoader.Utilities
         private static readonly ConcurrentDictionary<string, DateTime> _lastShown = new();
         private static readonly TimeSpan _cooldown = TimeSpan.FromSeconds(10);
 
+        public static void ShowInfo(string message, string title)
+        {
+            Show(message, title, MessageBoxImage.Information);
+        }
+
         public static void ShowWarning(string message, string title)
         {
             Show(message, title, MessageBoxImage.Warning);

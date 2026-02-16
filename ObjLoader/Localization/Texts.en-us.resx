@@ -512,4 +512,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>Texture</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>Texture</value></data>
 <data name="Image_File" xml:space="preserve"><value>Image File</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>Cache Management</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>Location</value></data>
+<data name="CacheSize" xml:space="preserve"><value>Size</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>Split</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>Last Access</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>Clean Up</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>Remove</value></data>
+<data name="MoveCache" xml:space="preserve"><value>Move</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>Delete?</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>Delete all orphaned caches?</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>Cache index corrupted. Rebuilding.</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>Split Cache Enabled</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>Optimize for HDD</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>Refresh Disk Cache</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (Split)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (Single)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>Relocate Cache</value></data>
+<data name="OldPath" xml:space="preserve"><value>Current Path Prefix</value></data>
+<data name="NewPath" xml:space="preserve"><value>New Path Prefix</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>Are you sure you want to relocate cache paths?\nPaths in the index will be updated.\nIf the physical folder exists at the source</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>Relocation completed.</value></data>
+<data name="Convert" xml:space="preserve"><value>Convert</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>Convert cache format (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>Failed to move physical folder. Check permissions or duplicates.\n(Cache relocation functionality continues)</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>Error</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>Failed to load cache index. Rebuilding index.</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>Failed to delete cache: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>Error during cache cleanup: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>Failed to move cache: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>Failed to rollback cache move: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>Failed to convert cache: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>Cache entry limit ({0}) reached. Old entries have been removed.</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>Failed to detect disk type: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>Initialization failed: {0}</value></data>
 </root>

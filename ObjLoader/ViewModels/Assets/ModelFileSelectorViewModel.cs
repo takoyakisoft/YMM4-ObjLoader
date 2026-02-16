@@ -9,6 +9,8 @@ using ObjLoader.Localization;
 using ObjLoader.Parsers;
 using ObjLoader.Plugin;
 using YukkuriMovieMaker.Commons;
+using ObjLoader.Settings;
+using ObjLoader.Cache;
 
 namespace ObjLoader.ViewModels.Assets
 {
@@ -189,10 +191,13 @@ namespace ObjLoader.ViewModels.Assets
                     .Where(f => _extensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                     .OrderBy(f => f);
 
+                var index = ModelSettings.Instance.GetCacheIndex();
+                IDictionary<string, CacheIndex.CacheEntry> cacheEntries = index.Entries;
+
                 foreach (var file in files)
                 {
                     var isSelected = file.Equals(FilePath, StringComparison.OrdinalIgnoreCase);
-                    var hasCache = File.Exists(file + ".bin");
+                    var hasCache = File.Exists(file + ".bin") || cacheEntries.ContainsKey(file);
                     var isThumbnailEnabled = isSelected || hasCache;
 
                     if (currentFiles.TryGetValue(file, out var existing))
@@ -203,20 +208,20 @@ namespace ObjLoader.ViewModels.Assets
                         }
                         else
                         {
-                            var item = CreateItem(file, isSelected);
+                            var item = CreateItem(file, isSelected, cacheEntries);
                             if (item != null) Files.Add(item);
                         }
                     }
                     else
                     {
-                        var item = CreateItem(file, isSelected);
+                        var item = CreateItem(file, isSelected, cacheEntries);
                         if (item != null) Files.Add(item);
                     }
                 }
 
                 if (!string.IsNullOrEmpty(FilePath) && !Files.Any(x => x.FullPath.Equals(FilePath, StringComparison.OrdinalIgnoreCase)))
                 {
-                    var item = CreateItem(FilePath, true);
+                    var item = CreateItem(FilePath, true, cacheEntries);
                     if (item != null) Files.Add(item);
                 }
 
@@ -228,10 +233,22 @@ namespace ObjLoader.ViewModels.Assets
             }
         }
 
-        private ModelFileItem? CreateItem(string path, bool isSelected)
+        private ModelFileItem? CreateItem(string path, bool isSelected, IDictionary<string, CacheIndex.CacheEntry>? cacheEntries = null)
         {
             if (!File.Exists(path)) return null;
-            var hasCache = File.Exists(path + ".bin");
+            
+            bool hasCache = File.Exists(path + ".bin");
+            if (!hasCache && cacheEntries == null)
+            {
+                 var index = ModelSettings.Instance.GetCacheIndex();
+                 cacheEntries = index.Entries;
+            }
+
+            if (!hasCache && cacheEntries != null)
+            {
+                hasCache = cacheEntries.ContainsKey(path);
+            }
+
             var isThumbnailEnabled = isSelected || hasCache;
             return new ModelFileItem(Path.GetFileName(path), path, isThumbnailEnabled ? _loader.GetThumbnail : _ => Array.Empty<byte>(), isThumbnailEnabled);
         }

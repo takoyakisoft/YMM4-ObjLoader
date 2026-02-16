@@ -5,6 +5,7 @@ using ObjLoader.Rendering.Core;
 using ObjLoader.Settings;
 using ObjLoader.Utilities;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Input;
@@ -219,6 +220,10 @@ namespace ObjLoader.ViewModels.Settings
         public ICommand RefreshGpuCacheCommand { get; }
         public ActionCommand RemoveSelectedCacheCommand { get; }
         public ICommand ClearAllCacheCommand { get; }
+        
+        public ActionCommand RemoveSelectedDiskCacheCommand { get; }
+        public ICommand CleanUpDiskCacheCommand { get; }
+        public ICommand RefreshDiskCacheCommand { get; }
 
         private AuditReport _latestReport = AuditReport.Empty;
         public AuditReport LatestReport
@@ -288,6 +293,44 @@ namespace ObjLoader.ViewModels.Settings
                     RemoveSelectedCacheCommand?.RaiseCanExecuteChanged();
             }
         }
+
+        public ObservableCollection<CacheEntryViewModel> DiskCacheEntries { get; } = new();
+
+        private CacheEntryViewModel? _selectedDiskCacheItem;
+        public CacheEntryViewModel? SelectedDiskCacheItem
+        {
+            get => _selectedDiskCacheItem;
+            set
+            {
+                if (Set(ref _selectedDiskCacheItem, value))
+                    RemoveSelectedDiskCacheCommand?.RaiseCanExecuteChanged();
+            }
+        }
+
+        private double _totalDiskCacheSizeMB;
+        public double TotalDiskCacheSizeMB
+        {
+            get => _totalDiskCacheSizeMB;
+            private set => Set(ref _totalDiskCacheSizeMB, value);
+        }
+
+        private string _moveCacheOldPath = string.Empty;
+        public string MoveCacheOldPath
+        {
+            get => _moveCacheOldPath;
+            set => Set(ref _moveCacheOldPath, value);
+        }
+
+        private string _moveCacheNewPath = string.Empty;
+        public string MoveCacheNewPath
+        {
+            get => _moveCacheNewPath;
+            set => Set(ref _moveCacheNewPath, value);
+        }
+
+        public ICommand MoveCacheLocationCommand { get; }
+        public ICommand SelectMoveCacheOldPathCommand { get; }
+        public ICommand SelectMoveCacheNewPathCommand { get; }
 
         public ModelSettingsViewModel(ModelSettings settings)
         {
@@ -571,6 +614,93 @@ namespace ObjLoader.ViewModels.Settings
                 }
             });
 
+            RemoveSelectedDiskCacheCommand = new ActionCommand(
+                _ => SelectedDiskCacheItem != null,
+                _ =>
+                {
+                    try
+                    {
+                        if (SelectedDiskCacheItem == null) return;
+                        var result = MessageBox.Show(Texts.ConfirmDeleteCache, Texts.ConfirmTitle, MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                        if (result != MessageBoxResult.Yes) return;
+
+                        CacheManager.DeleteCache(SelectedDiskCacheItem.OriginalPath);
+                        RefreshDiskCacheList();
+                    }
+                    catch
+                    {
+                    }
+                });
+
+            CleanUpDiskCacheCommand = new ActionCommand(_ => true, _ =>
+            {
+                try
+                {
+                    var result = MessageBox.Show(Texts.ConfirmCleanUpCache, Texts.ConfirmTitle, MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (result != MessageBoxResult.Yes) return;
+
+                    CacheManager.CleanUpCache();
+                    RefreshDiskCacheList();
+                }
+                catch
+                {
+                }
+            });
+
+            RefreshDiskCacheCommand = new ActionCommand(_ => true, _ => RefreshDiskCacheList());
+
+            MoveCacheLocationCommand = new ActionCommand(
+                _ => !string.IsNullOrEmpty(MoveCacheOldPath) && !string.IsNullOrEmpty(MoveCacheNewPath),
+                _ =>
+                {
+                    try
+                    {
+                        var result = MessageBox.Show(Texts.ConfirmMoveCache, Texts.ConfirmTitle, MessageBoxButton.YesNo, MessageBoxImage.Question);
+                        if (result != MessageBoxResult.Yes) return;
+
+                        if (Directory.Exists(MoveCacheOldPath) && !Directory.Exists(MoveCacheNewPath))
+                        {
+                            try
+                            {
+                                Directory.Move(MoveCacheOldPath, MoveCacheNewPath);
+                            }
+                            catch
+                            {
+                                MessageBox.Show(Texts.MovePhysicalFailed, Texts.ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
+                            }
+                        }
+
+                        CacheManager.MoveCache(MoveCacheOldPath, MoveCacheNewPath);
+                        RefreshDiskCacheList();
+                        
+                        MoveCacheOldPath = string.Empty;
+                        MoveCacheNewPath = string.Empty;
+                        
+                        MessageBox.Show(Texts.MoveCacheComplete, Texts.ConfirmTitle, MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    catch
+                    {
+                    }
+                });
+
+            SelectMoveCacheOldPathCommand = new ActionCommand(_ => true, _ =>
+            {
+                var dialog = new Microsoft.Win32.OpenFolderDialog();
+                if (dialog.ShowDialog() == true)
+                {
+                    MoveCacheOldPath = dialog.FolderName;
+                }
+            });
+
+            SelectMoveCacheNewPathCommand = new ActionCommand(_ => true, _ =>
+            {
+                var dialog = new Microsoft.Win32.OpenFolderDialog();
+                if (dialog.ShowDialog() == true)
+                {
+                    MoveCacheNewPath = dialog.FolderName;
+                }
+            });
+
             _auditHandler = OnAuditCompleted;
             ResourceAuditor.Instance.AuditCompleted += _auditHandler;
 
@@ -585,6 +715,7 @@ namespace ObjLoader.ViewModels.Settings
 
             RefreshDashboard();
             RefreshGpuCacheList();
+            RefreshDiskCacheList();
         }
 
         private void OnDashboardTimerTick(object? sender, EventArgs e)
@@ -595,6 +726,7 @@ namespace ObjLoader.ViewModels.Settings
 
         private void RefreshDashboard()
         {
+            if (_disposed) return;
             try
             {
                 var stats = ResourceTracker.Instance.GetStats();
@@ -655,6 +787,7 @@ namespace ObjLoader.ViewModels.Settings
 
         private void RefreshGpuCacheList()
         {
+            if (_disposed) return;
             try
             {
                 var snapshot = GpuResourceCache.Instance.GetSnapshot();
@@ -668,6 +801,32 @@ namespace ObjLoader.ViewModels.Settings
             catch
             {
             }
+        }
+
+        private void RefreshDiskCacheList()
+        {
+            if (_disposed) return;
+            try
+            {
+                var index = ModelSettings.Instance.GetCacheIndex();
+                DiskCacheEntries.Clear();
+                long totalSize = 0;
+                foreach (var entry in index.Entries.Values)
+                {
+                    DiskCacheEntries.Add(new CacheEntryViewModel
+                    {
+                        OriginalPath = entry.OriginalPath,
+                        CachePath = entry.CacheRootPath,
+                        TotalSizeBytes = entry.TotalSize,
+                        LastAccess = entry.LastAccessTime,
+                        IsSplit = entry.IsSplit,
+                        PartsCount = entry.PartsCount
+                    });
+                    totalSize += entry.TotalSize;
+                }
+                TotalDiskCacheSizeMB = Math.Round(totalSize / (1024.0 * 1024.0), 2);
+            }
+            catch { }
         }
 
         private static void CopyResourceListToClipboard(List<ResourceAllocation> resources, string title)

@@ -512,4 +512,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>الملمس</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>الملمس</value></data>
 <data name="Image_File" xml:space="preserve"><value>Image File</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>إدارة ذاكرة التخزين المؤقت</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>موقع</value></data>
+<data name="CacheSize" xml:space="preserve"><value>حجم</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>انقسام</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>آخر وصول</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>تنظيف</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>إزالة</value></data>
+<data name="MoveCache" xml:space="preserve"><value>نقل</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>هل تريد الحذف حقًا؟</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>هل تريد حذف جميع ذاكرة التخزين المؤقت اليتيمة؟</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>فهرس ذاكرة التخزين المؤقت تالف. إعادة البناء.</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>تم تمكين ذاكرة التخزين المؤقت المقسمة</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>تحسين لمحركات الأقراص الصلبة</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>تحديث ذاكرة التTخزين المؤقت GPU</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (مقسم)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (مفرد)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>نقل ذاكرة التخزين المؤقت</value></data>
+<data name="OldPath" xml:space="preserve"><value>بادئة المسار الحالي</value></data>
+<data name="NewPath" xml:space="preserve"><value>بادئة مسار جديد</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>¿Está seguro de que desea reubicar las rutas de caché?\nLas rutas en el índice se actualizarán.\nSi existe la carpeta física en el origen</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>تم النقل بنجاح.</value></data>
+<data name="Convert" xml:space="preserve"><value>تحويل</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>تحويل تنسيق ذاكرة التخزين المؤقت (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>فشل في نقل المجلد الفعلي. تحقق من الأذونات أو التكرارات.\n(ستستمر وظيفة إعادة تحديد موقع ذاكرة التخزين المؤقت)</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>خطأ</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>فشل تحميل فهرس ذاكرة التخزين المؤقت. إعادة بناء الفهرس.</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>فشل حذف ذاكرة التخزين المؤقت: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>خطأ أثناء تنظيف ذاكرة التخزين المؤقت: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>فشل نقل ذاكرة التخزين المؤقت: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>فشل التراجع عن نقل ذاكرة التخزين المؤقت: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>فشل تحويل ذاكرة التخزين المؤقت: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>وصلت إدخالات ذاكرة التخزين المؤقت إلى الحد الأقصى ({0}). تم حذف الإدخالات القديمة.</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>فشل اكتشاف نوع القرص: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>فشل التهيئة: {0}</value></data>
 </root>

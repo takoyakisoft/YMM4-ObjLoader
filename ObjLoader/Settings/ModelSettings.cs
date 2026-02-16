@@ -1,6 +1,7 @@
 ﻿using ObjLoader.Infrastructure;
 using ObjLoader.Localization;
 using ObjLoader.Utilities;
+using ObjLoader.Cache;
 using Vortice.DXGI;
 using YukkuriMovieMaker.Plugin;
 
@@ -139,49 +140,17 @@ namespace ObjLoader.Settings
                     }
                 }
 
-                if (DXGI.CreateDXGIFactory1(out IDXGIFactory1? factory).Success && factory != null)
+                Task.Run(() =>
                 {
-                    using (factory)
+                    try
                     {
-                        long maxDedicatedVideoMemory = 0;
-                        long maxSharedSystemMemory = 0;
-
-                        for (int i = 0; factory.EnumAdapters1(i, out var adapter).Success; i++)
-                        {
-                            using (adapter)
-                            {
-                                var desc = adapter.Description1;
-                                if ((desc.Flags & AdapterFlags.Software) == 0)
-                                {
-                                    if ((long)desc.DedicatedVideoMemory > maxDedicatedVideoMemory)
-                                    {
-                                        maxDedicatedVideoMemory = (long)desc.DedicatedVideoMemory;
-                                        maxSharedSystemMemory = (long)desc.SharedSystemMemory;
-                                    }
-                                }
-                            }
-                        }
-
-                        long clampTargetMemory = 0;
-                        if (maxDedicatedVideoMemory > 512 * 1024 * 1024)
-                        {
-                            clampTargetMemory = maxDedicatedVideoMemory;
-                        }
-                        else if (maxSharedSystemMemory > 0)
-                        {
-                            clampTargetMemory = maxSharedSystemMemory;
-                        }
-
-                        if (clampTargetMemory > 0)
-                        {
-                            int maxMB = (int)(clampTargetMemory / (1024 * 1024));
-                            if (maxMB <= DefaultMaxTotalGpuMemoryMB)
-                            {
-                                MaxTotalGpuMemoryMB = Math.Min(MaxTotalGpuMemoryMB, maxMB);
-                            }
-                        }
+                        AdjustGpuMemoryLimit();
                     }
-                }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: GPU info retrieval failed: {ex.Message}");
+                    }
+                });
 
                 ResourceAuditor.Instance.SetLeakThreshold(TimeSpan.FromMinutes(Math.Max(1.0, _leakThresholdMinutes)));
 
@@ -194,8 +163,57 @@ namespace ObjLoader.Settings
                     ResourceAuditor.Instance.Stop();
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: Initialization failed: {ex.Message}");
+                UserNotification.ShowWarning(string.Format(Texts.InitializationFailed, ex.Message), Texts.ErrorTitle);
+            }
+        }
+
+        private void AdjustGpuMemoryLimit()
+        {
+            if (DXGI.CreateDXGIFactory1(out IDXGIFactory1? factory).Success && factory != null)
+            {
+                using (factory)
+                {
+                    long maxDedicatedVideoMemory = 0;
+                    long maxSharedSystemMemory = 0;
+
+                    for (int i = 0; factory.EnumAdapters1(i, out var adapter).Success; i++)
+                    {
+                        using (adapter)
+                        {
+                            var desc = adapter.Description1;
+                            if ((desc.Flags & AdapterFlags.Software) == 0)
+                            {
+                                if ((long)desc.DedicatedVideoMemory > maxDedicatedVideoMemory)
+                                {
+                                    maxDedicatedVideoMemory = (long)desc.DedicatedVideoMemory;
+                                    maxSharedSystemMemory = (long)desc.SharedSystemMemory;
+                                }
+                            }
+                        }
+                    }
+
+                    long clampTargetMemory = 0;
+                    if (maxDedicatedVideoMemory > 512 * 1024 * 1024)
+                    {
+                        clampTargetMemory = maxDedicatedVideoMemory;
+                    }
+                    else if (maxSharedSystemMemory > 0)
+                    {
+                        clampTargetMemory = maxSharedSystemMemory;
+                    }
+
+                    if (clampTargetMemory > 0)
+                    {
+                        int maxMB = (int)(clampTargetMemory / (1024 * 1024));
+                        if (maxMB <= DefaultMaxTotalGpuMemoryMB)
+                        {
+                            MaxTotalGpuMemoryMB = Math.Min(MaxTotalGpuMemoryMB, maxMB);
+                        }
+                    }
+                }
             }
         }
 
@@ -239,6 +257,67 @@ namespace ObjLoader.Settings
                 return string.Format(Texts.PartCountExceeded, fileName, FormatCount(partCount), FormatCount(_maxParts));
             }
             return string.Empty;
+        }
+
+        private string _cacheIndexData = string.Empty;
+        public string CacheIndexData
+        {
+            get => _cacheIndexData;
+            set => Set(ref _cacheIndexData, value);
+        }
+
+        public CacheIndex GetCacheIndex()
+        {
+            if (string.IsNullOrEmpty(_cacheIndexData))
+            {
+                return new CacheIndex();
+            }
+
+            try
+            {
+                byte[] data = Convert.FromBase64String(_cacheIndexData);
+                return CacheIndex.FromBinary(data);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ModelSettings.GetCacheIndex: Failed to decode cache index: {ex.Message}");
+                return new CacheIndex();
+            }
+        }
+
+        public const int MaxCacheEntries = 10000;
+
+        public void SaveCacheIndex(CacheIndex index)
+        {
+            if (index == null)
+            {
+                CacheIndexData = string.Empty;
+                return;
+            }
+
+            if (index.Entries.Count > MaxCacheEntries)
+            {
+                var keysToRemove = index.Entries.OrderBy(x => x.Value.LastAccessTime)
+                                                .Take(index.Entries.Count - MaxCacheEntries)
+                                                .Select(x => x.Key)
+                                                .ToList();
+                foreach (var key in keysToRemove)
+                {
+                    index.Entries.Remove(key);
+                }
+
+                UserNotification.ShowInfo(string.Format(Texts.CacheEntryLimitReached, MaxCacheEntries), Texts.ErrorTitle);
+            }
+
+            try
+            {
+                byte[] data = index.ToBinary();
+                CacheIndexData = Convert.ToBase64String(data);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ModelSettings.SaveCacheIndex: Failed to serialize cache index: {ex.Message}");
+            }
         }
 
         private static string FormatCount(int value)

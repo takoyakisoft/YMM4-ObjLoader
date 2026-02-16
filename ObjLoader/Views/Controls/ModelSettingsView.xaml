@@ -305,6 +305,97 @@
             </Border>
 
             <DockPanel Margin="0,0,0,12">
+                <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Style="{StaticResource IconButtonStyle}" Content="&#xE72C;" ToolTip="{x:Static l:Texts.RefreshDiskCache}" Command="{Binding RefreshDiskCacheCommand}" FontSize="16" Margin="0"/>
+                <TextBlock Text="{x:Static l:Texts.CacheManagement}" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Border Style="{StaticResource SectionBorder}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock Text="{x:Static l:Texts.CacheSize}" Margin="0,0,8,0" FontSize="13"/>
+                        <TextBlock Text="{Binding TotalDiskCacheSizeMB, StringFormat={}{0:F2}}" FontWeight="Bold" FontSize="13"/>
+                        <TextBlock Text=" MB" FontWeight="Bold" FontSize="13"/>
+                    </StackPanel>
+
+                    <DataGrid ItemsSource="{Binding DiskCacheEntries}" SelectedItem="{Binding SelectedDiskCacheItem, Mode=TwoWay}" AutoGenerateColumns="False" Height="200" Margin="0,0,0,12"
+                              Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                              Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"
+                              BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                              BorderThickness="1"
+                              HeadersVisibility="Column" IsReadOnly="True" CanUserAddRows="False"
+                              PreviewMouseWheel="OnPreviewMouseWheel"
+                              GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}">
+                        <DataGrid.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="0"/>
+                            </Style>
+                        </DataGrid.Resources>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="{x:Static l:Texts.KeyHeader}" Binding="{Binding OriginalPath}" Width="2*"/>
+                            <DataGridTextColumn Header="{x:Static l:Texts.CacheLocation}" Binding="{Binding CachePath}" Width="2*"/>
+                            <DataGridTemplateColumn Header="{x:Static l:Texts.TypeHeader}" Width="Auto">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding TypeText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <Button Content="{x:Static l:Texts.Convert}" Command="{Binding ConvertCommand}" ToolTip="{x:Static l:Texts.ConvertCacheDesc}" Padding="6,2" FontSize="11"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="{x:Static l:Texts.CacheSize}" Binding="{Binding TotalSizeText}" Width="Auto"/>
+                            <DataGridTextColumn Header="{x:Static l:Texts.CacheLastAccess}" Binding="{Binding LastAccess, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="Auto"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="{x:Static l:Texts.RemoveCache}" Command="{Binding RemoveSelectedDiskCacheCommand}" Margin="0,0,12,0" Padding="16,8" FontSize="13"
+                                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"/>
+                        <Button Content="{x:Static l:Texts.CleanUpCache}" Command="{Binding CleanUpDiskCacheCommand}" Padding="16,8" FontSize="13"
+                                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" Foreground="#D32F2F" BorderBrush="#D32F2F"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <DockPanel Margin="0,0,0,12">
+                <TextBlock Text="{x:Static l:Texts.RelocateCache}" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Border Style="{StaticResource SectionBorder}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{x:Static l:Texts.OldPath}" VerticalAlignment="Center" Margin="0,0,12,8" FontSize="13"/>
+                        <Grid Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Text="{Binding MoveCacheOldPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource GhostTextBox}" Margin="0,0,8,0"/>
+                            <Button Grid.Column="1" Content="..." Command="{Binding SelectMoveCacheOldPathCommand}" Width="30" Height="24" Padding="0,0,0,4"/>
+                        </Grid>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{x:Static l:Texts.NewPath}" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="13"/>
+                        <Grid Grid.Row="1" Grid.Column="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Text="{Binding MoveCacheNewPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource GhostTextBox}" Margin="0,0,8,0"/>
+                            <Button Grid.Column="1" Content="..." Command="{Binding SelectMoveCacheNewPathCommand}" Width="30" Height="24" Padding="0,0,0,4"/>
+                        </Grid>
+                    </Grid>
+                    <Button Content="{x:Static l:Texts.MoveCache}" Command="{Binding MoveCacheLocationCommand}" HorizontalAlignment="Left" Padding="16,8" FontSize="13"
+                            Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"/>
+                </StackPanel>
+            </Border>
+
+            <DockPanel Margin="0,0,0,12">
                 <TextBlock Text="{x:Static l:Texts.AuditResults}" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
             </DockPanel>
             <Border Style="{StaticResource SectionBorder}" Margin="0">

@@ -511,4 +511,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>Tekstur</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>Tekstur</value></data>
 <data name="Image_File" xml:space="preserve"><value>Image File</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>Manajemen Cache</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>Lokasi</value></data>
+<data name="CacheSize" xml:space="preserve"><value>Ukuran</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>Terbagi</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>Akses Terakhir</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>Bersihkan</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>Hapus</value></data>
+<data name="MoveCache" xml:space="preserve"><value>Pindah</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>Hapus?</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>Hapus semua cache yatim?</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>Indeks cache rusak. Membangun ulang.</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>Split Cache Diaktifkan</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>Optimalkan untuk HDD</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>Segarkan Daftar Cache GPU</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (Terbagi)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (Tunggal)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>Pindahkan Cache</value></data>
+<data name="OldPath" xml:space="preserve"><value>Awalan Jalur Saat Ini</value></data>
+<data name="NewPath" xml:space="preserve"><value>Awalan Jalur Baru</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>también se moverá.\n(Objetivo: Entradas que comienzan con OldPath)</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>Relokasi selesai.</value></data>
+<data name="Convert" xml:space="preserve"><value>Ubah</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>Ubah format cache (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>Gagal memindahkan folder fisik. Periksa izin atau duplikat.\n(Fungsi relokasi cache berlanjut)</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>Kesalahan</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>Gagal memuat indeks cache. Membangun ulang indeks.</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>Gagal menghapus cache: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>Terjadi kesalahan saat membersihkan cache: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>Gagal memindahkan cache: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>Gagal membatalkan pemindahan cache: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>Gagal mengubah cache: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>Batas entri cache ({0}) tercapai. Entri lama telah dihapus.</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>Gagal mendeteksi jenis disk: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>Inisialisasi gagal: {0}</value></data>
 </root>

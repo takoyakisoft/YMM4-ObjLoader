@@ -512,4 +512,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>텍스처</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>텍스처</value></data>
 <data name="Image_File" xml:space="preserve"><value>Image File</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>캐시 관리</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>위치</value></data>
+<data name="CacheSize" xml:space="preserve"><value>크기</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>분할</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>마지막 액세스</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>정리</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>삭제</value></data>
+<data name="MoveCache" xml:space="preserve"><value>이동</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>정말 삭제하시겠습니까?</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>모든 고아 캐시를 삭제하시겠습니까?</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>캐시 인덱스가 손상되었습니다. 다시 작성 중입니다.</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>분할 캐시 활성화</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>HDD 최적화</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>디스크 캐시 새로고침</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (분할)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (단일)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>캐시 이동</value></data>
+<data name="OldPath" xml:space="preserve"><value>현재 경로 접두사</value></data>
+<data name="NewPath" xml:space="preserve"><value>새 경로 접두사</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>確定要重新定位快取路徑嗎？\n索引中的路徑將被更新。\n如果來源位置存在實體資料夾，它是也將被移動。\n（目標：以 OldPath 開頭的項目）</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>이전이 완료되었습니다。</value></data>
+<data name="Convert" xml:space="preserve"><value>변환</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>캐시 형식 변환 (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>물리적 폴더를 이동하지 못했습니다. 액세스 권한이나 중복을 확인하십시오.\n(캐시 재배치 기능은 계속됩니다)</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>오류</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>캐시 인덱스 로드 실패. 인덱스를 다시 작성합니다.</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>캐시 삭제 실패: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>캐시 정리 중 오류 발생: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>캐시 이동 실패: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>캐시 이동 롤백 실패: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>캐시 변환 실패: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>캐시 항목이 제한 ({0})에 도달하여 오래된 항목을 삭제했습니다.</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>디스크 유형 감지 실패: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>초기화 실패: {0}</value></data>
 </root>

@@ -512,4 +512,38 @@
 <data name="Material_Texture" xml:space="preserve"><value>Textura</value></data>
 <data name="Group_Texture" xml:space="preserve"><value>Textura</value></data>
 <data name="Image_File" xml:space="preserve"><value>Image File</value></data>
+<data name="CacheManagement" xml:space="preserve"><value>Gestión de caché</value></data>
+<data name="CacheLocation" xml:space="preserve"><value>Ubicación</value></data>
+<data name="CacheSize" xml:space="preserve"><value>Tamaño</value></data>
+<data name="CacheSplit" xml:space="preserve"><value>Dividir</value></data>
+<data name="CacheLastAccess" xml:space="preserve"><value>Último acceso</value></data>
+<data name="CleanUpCache" xml:space="preserve"><value>Limpiar</value></data>
+<data name="RemoveCache" xml:space="preserve"><value>Eliminar</value></data>
+<data name="MoveCache" xml:space="preserve"><value>Mover</value></data>
+<data name="ConfirmDeleteCache" xml:space="preserve"><value>¿Eliminar?</value></data>
+<data name="ConfirmCleanUpCache" xml:space="preserve"><value>¿Eliminar todos los cachés huérfanos?</value></data>
+<data name="CacheIndexCorrupted" xml:space="preserve"><value>Índice de caché dañado. Reconstruyendo.</value></data>
+<data name="SplitCacheEnabled" xml:space="preserve"><value>Caché dividido habilitado</value></data>
+<data name="OptimizeHdd" xml:space="preserve"><value>Optimizar para HDD</value></data>
+<data name="RefreshDiskCache" xml:space="preserve"><value>Actualizar caché de disco</value></data>
+<data name="CacheTypeHddSplit" xml:space="preserve"><value>HDD (Dividido)</value></data>
+<data name="CacheTypeSsdSingle" xml:space="preserve"><value>SSD (Único)</value></data>
+<data name="RelocateCache" xml:space="preserve"><value>Reubicar caché</value></data>
+<data name="OldPath" xml:space="preserve"><value>Prefijo de ruta actual</value></data>
+<data name="NewPath" xml:space="preserve"><value>Nuevo prefijo de ruta</value></data>
+<data name="ConfirmMoveCache" xml:space="preserve"><value>캐시 경로를 재배치하시겠습니까?\n인덱스의 경로가 업데이트됩니다.\n원본 위치에 물리적 폴더가 있는 경우 해당 폴더도 이동됩니다.\n(대상: OldPath로 시작하는 항목)</value></data>
+<data name="MoveCacheComplete" xml:space="preserve"><value>Reubicación completada.</value></data>
+<data name="Convert" xml:space="preserve"><value>Convertir</value></data>
+<data name="ConvertCacheDesc" xml:space="preserve"><value>Convertir formato de caché (HDD⇔SSD)</value></data>
+<data name="MovePhysicalFailed" xml:space="preserve"><value>Error al mover la carpeta física. Compruebe los permisos o duplicados.\n(La funcionalidad de reubicación de caché continúa)</value></data>
+<data name="ErrorTitle" xml:space="preserve"><value>Error</value></data>
+<data name="CacheIndexDeserializationFailed" xml:space="preserve"><value>Error al cargar el índice de caché. Reconstruyendo el índice.</value></data>
+<data name="CacheDeleteFailed" xml:space="preserve"><value>Error al eliminar la caché: {0}</value></data>
+<data name="CacheCleanUpFailed" xml:space="preserve"><value>Error durante la limpieza de la caché: {0}</value></data>
+<data name="CacheMoveFailed" xml:space="preserve"><value>Error al mover la caché: {0}</value></data>
+<data name="CacheMoveRollbackFailed" xml:space="preserve"><value>Error al revertir la reubicación de la caché: {0}</value></data>
+<data name="CacheConvertFailed" xml:space="preserve"><value>Error al convertir la caché: {0}</value></data>
+<data name="CacheEntryLimitReached" xml:space="preserve"><value>Límite de entradas de caché ({0}) alcanzado. Se eliminaron las entradas antiguas.</value></data>
+<data name="DiskTypeDetectionFailed" xml:space="preserve"><value>Error al detectar el tipo de disco: {0}</value></data>
+<data name="InitializationFailed" xml:space="preserve"><value>Error de inicialización: {0}</value></data>
 </root>
