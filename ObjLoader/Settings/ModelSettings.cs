@@ -1,7 +1,10 @@
-﻿using ObjLoader.Infrastructure;
+﻿using System.IO;
+using ObjLoader.Cache;
+using ObjLoader.Infrastructure;
 using ObjLoader.Localization;
 using ObjLoader.Utilities;
-using ObjLoader.Cache;
+using ObjLoader.Views.Controls;
+using ObjLoader.ViewModels.Settings;
 using Vortice.DXGI;
 using YukkuriMovieMaker.Plugin;
 
@@ -12,7 +15,7 @@ namespace ObjLoader.Settings
         public override string Name => Texts.Settings_3DModel;
         public override SettingsCategory Category => SettingsCategory.Shape;
         public override bool HasSettingView => true;
-        public override object SettingView => new Views.Controls.ModelSettingsView { DataContext = new ViewModels.Settings.ModelSettingsViewModel(this) };
+        public override object SettingView => new ModelSettingsView { DataContext = new ModelSettingsViewModel(this) };
         public static ModelSettings Instance => Default;
 
         public const int DefaultMaxFileSizeMB = 500;
@@ -86,14 +89,24 @@ namespace ObjLoader.Settings
         public int MaxGpuMemoryPerModelMB
         {
             get => _maxGpuMemoryPerModelMB;
-            set => Set(ref _maxGpuMemoryPerModelMB, Math.Clamp(value, MinGpuMemoryMB, MaxGpuMemoryMBLimit));
+            set => Set(ref _maxGpuMemoryPerModelMB, Math.Clamp(value, MinGpuMemoryMB, Math.Min(MaxGpuMemoryMBLimit, _maxTotalGpuMemoryMB)));
         }
 
         private int _maxTotalGpuMemoryMB = DefaultMaxTotalGpuMemoryMB;
         public int MaxTotalGpuMemoryMB
         {
             get => _maxTotalGpuMemoryMB;
-            set => Set(ref _maxTotalGpuMemoryMB, Math.Clamp(value, MinGpuMemoryMB, MaxGpuMemoryMBLimit));
+            set
+            {
+                int clamped = Math.Clamp(value, MinGpuMemoryMB, MaxGpuMemoryMBLimit);
+                if (Set(ref _maxTotalGpuMemoryMB, clamped))
+                {
+                    if (_maxGpuMemoryPerModelMB > _maxTotalGpuMemoryMB)
+                    {
+                        MaxGpuMemoryPerModelMB = _maxTotalGpuMemoryMB;
+                    }
+                }
+            }
         }
 
         private int _maxVertices = DefaultMaxVertices;
@@ -131,27 +144,28 @@ namespace ObjLoader.Settings
                     FileSystemSandbox.Instance.Disable();
 
                 FileSystemSandbox.Instance.ClearAllowedRoots();
-                if (_allowedRoots != null)
+                foreach (var root in _allowedRoots)
                 {
-                    foreach (var root in _allowedRoots)
-                    {
-                        if (!string.IsNullOrWhiteSpace(root))
-                            FileSystemSandbox.Instance.AddAllowedRoot(root);
-                    }
+                    if (!string.IsNullOrWhiteSpace(root))
+                        FileSystemSandbox.Instance.AddAllowedRoot(root);
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: Sandbox setup failed: {ex.Message}");
+            }
 
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        AdjustGpuMemoryLimit();
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: GPU info retrieval failed: {ex.Message}");
-                    }
-                });
+            try
+            {
+                AdjustGpuMemoryLimit();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: GPU info retrieval failed: {ex.Message}");
+            }
 
+            try
+            {
                 ResourceAuditor.Instance.SetLeakThreshold(TimeSpan.FromMinutes(Math.Max(1.0, _leakThresholdMinutes)));
 
                 if (_enableAutoAudit)
@@ -165,8 +179,7 @@ namespace ObjLoader.Settings
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: Initialization failed: {ex.Message}");
-                UserNotification.ShowWarning(string.Format(Texts.InitializationFailed, ex.Message), Texts.ErrorTitle);
+                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: Auditor setup failed: {ex.Message}");
             }
         }
 
@@ -196,7 +209,7 @@ namespace ObjLoader.Settings
                     }
 
                     long clampTargetMemory = 0;
-                    if (maxDedicatedVideoMemory > 512 * 1024 * 1024)
+                    if (maxDedicatedVideoMemory > 512L * 1024L * 1024L)
                     {
                         clampTargetMemory = maxDedicatedVideoMemory;
                     }
@@ -207,10 +220,10 @@ namespace ObjLoader.Settings
 
                     if (clampTargetMemory > 0)
                     {
-                        int maxMB = (int)(clampTargetMemory / (1024 * 1024));
+                        long maxMB = clampTargetMemory / (1024L * 1024L);
                         if (maxMB <= DefaultMaxTotalGpuMemoryMB)
                         {
-                            MaxTotalGpuMemoryMB = Math.Min(MaxTotalGpuMemoryMB, maxMB);
+                            MaxTotalGpuMemoryMB = Math.Min(MaxTotalGpuMemoryMB, (int)maxMB);
                         }
                     }
                 }
@@ -259,30 +272,36 @@ namespace ObjLoader.Settings
             return string.Empty;
         }
 
-        private string _cacheIndexData = string.Empty;
-        public string CacheIndexData
+        private List<string> _cacheIndexPaths = new List<string>();
+        public List<string> CacheIndexPaths
         {
-            get => _cacheIndexData;
-            set => Set(ref _cacheIndexData, value);
+            get => _cacheIndexPaths;
+            set => Set(ref _cacheIndexPaths, value ?? new List<string>());
         }
 
         public CacheIndex GetCacheIndex()
         {
-            if (string.IsNullOrEmpty(_cacheIndexData))
-            {
-                return new CacheIndex();
-            }
+            var aggregatedIndex = new CacheIndex();
 
-            try
+            foreach (var path in _cacheIndexPaths)
             {
-                byte[] data = Convert.FromBase64String(_cacheIndexData);
-                return CacheIndex.FromBinary(data);
+                if (!File.Exists(path)) continue;
+
+                try
+                {
+                    byte[] data = File.ReadAllBytes(path);
+                    var loadedIndex = CacheIndex.FromBinary(data);
+                    foreach (var kvp in loadedIndex.Entries)
+                    {
+                        aggregatedIndex.Entries[kvp.Key] = kvp.Value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"ModelSettings.GetCacheIndex: Failed to load index from '{path}': {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"ModelSettings.GetCacheIndex: Failed to decode cache index: {ex.Message}");
-                return new CacheIndex();
-            }
+            return aggregatedIndex;
         }
 
         public const int MaxCacheEntries = 10000;
@@ -291,7 +310,8 @@ namespace ObjLoader.Settings
         {
             if (index == null)
             {
-                CacheIndexData = string.Empty;
+                CacheIndexPaths = new List<string>();
+                Save();
                 return;
             }
 
@@ -309,15 +329,46 @@ namespace ObjLoader.Settings
                 UserNotification.ShowInfo(string.Format(Texts.CacheEntryLimitReached, MaxCacheEntries), Texts.ErrorTitle);
             }
 
-            try
+            var newPaths = new List<string>();
+
+            var groupedEntries = index.Entries.GroupBy(kvp =>
             {
-                byte[] data = index.ToBinary();
-                CacheIndexData = Convert.ToBase64String(data);
-            }
-            catch (Exception ex)
+                string? originalDir = Path.GetDirectoryName(kvp.Key);
+                return string.IsNullOrEmpty(originalDir) ? string.Empty : originalDir;
+            });
+
+            foreach (var group in groupedEntries)
             {
-                System.Diagnostics.Debug.WriteLine($"ModelSettings.SaveCacheIndex: Failed to serialize cache index: {ex.Message}");
+                if (string.IsNullOrEmpty(group.Key)) continue;
+
+                string cacheDir = Path.Combine(group.Key, ".cache");
+                string indexFile = Path.Combine(cacheDir, "CacheIndex.dat");
+
+                try
+                {
+                    if (!Directory.Exists(cacheDir))
+                    {
+                        var di = Directory.CreateDirectory(cacheDir);
+                        di.Attributes |= FileAttributes.Hidden;
+                    }
+
+                    var partialIndex = new CacheIndex();
+                    partialIndex.Version = index.Version;
+                    foreach (var kvp in group)
+                    {
+                        partialIndex.Entries[kvp.Key] = kvp.Value;
+                    }
+
+                    File.WriteAllBytes(indexFile, partialIndex.ToBinary());
+                    newPaths.Add(indexFile);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"ModelSettings.SaveCacheIndex: Failed to save partial index to '{indexFile}': {ex.Message}");
+                }
             }
+            CacheIndexPaths = newPaths;
+            Save();
         }
 
         private static string FormatCount(int value)
