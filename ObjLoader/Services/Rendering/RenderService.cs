@@ -510,7 +510,7 @@ namespace ObjLoader.Services.Rendering
                 var wvpShadow = world * lightViewProj;
 
                 int stride = Unsafe.SizeOf<ObjVertex>();
-                _vbArray[0] = modelResource.VertexBuffer;
+                _vbArray[0] = layer.OverrideVB ?? modelResource.VertexBuffer;
                 _strideArray[0] = stride;
                 _context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
                 _context.IASetIndexBuffer(modelResource.IndexBuffer, Format.R32_UInt, 0);
@@ -642,7 +642,7 @@ namespace ObjLoader.Services.Rendering
                 if (layerIndex != lastLayerIndex)
                 {
                     int stride = Unsafe.SizeOf<ObjVertex>();
-                    _vbArray[0] = modelResource.VertexBuffer;
+                    _vbArray[0] = layer.OverrideVB ?? modelResource.VertexBuffer;
                     _strideArray[0] = stride;
                     _context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
                     _context.IASetIndexBuffer(modelResource.IndexBuffer, Format.R32_UInt, 0);
@@ -683,7 +683,7 @@ namespace ObjLoader.Services.Rendering
                 if (tp.LayerIndex != lastLayerIndex)
                 {
                     int stride = Unsafe.SizeOf<ObjVertex>();
-                    _vbArray[0] = resource.VertexBuffer;
+                    _vbArray[0] = layer.OverrideVB ?? resource.VertexBuffer;
                     _strideArray[0] = stride;
                     _context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
                     _context.IASetIndexBuffer(resource.IndexBuffer, Format.R32_UInt, 0);

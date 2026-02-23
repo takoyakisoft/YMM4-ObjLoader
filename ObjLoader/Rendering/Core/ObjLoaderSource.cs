@@ -122,7 +122,7 @@ namespace ObjLoader.Rendering.Core
             _loader = new ObjModelLoader();
             _textureService = new TextureService();
             _dynamicTextureManager = new DynamicTextureManager(_textureService);
-            _skinningManager = new SkinningManager(_devices);
+            _skinningManager = new SkinningManager(_devices.D3D.Device);
 
             _resources = D3DResourcesPool.Acquire(devices.D3D.Device);
 

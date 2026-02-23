@@ -5,6 +5,10 @@ using ObjLoader.Localization;
 using ObjLoader.Parsers;
 using ObjLoader.Plugin;
 using ObjLoader.Services.Textures;
+using ObjLoader.Rendering.Managers;
+using ObjLoader.Rendering.Managers.Interfaces;
+using ObjLoader.Services.Mmd.Animation;
+using ObjLoader.Services.Mmd.Parsers;
 using ObjLoader.Settings;
 using ObjLoader.Utilities;
 using System.IO;
@@ -28,6 +32,11 @@ namespace ObjLoader.Services.Rendering
         private readonly ITextureService _textureService;
         private readonly Dictionary<string, (Vector3 Size, Vector3 Min, Vector3 Max)> _boundingData = new();
         private readonly HashSet<string> _managedCacheKeys = new();
+        private ISkinningManager? _skinningManager;
+        private readonly Dictionary<string, (ObjVertex[] Vertices, Core.Mmd.VertexBoneWeight[] BoneWeights)> _modelSkinningData = new();
+        private readonly Dictionary<string, List<Core.Mmd.PmxBone>> _modelBones = new();
+        private readonly Dictionary<string, string> _registeredSkinningGuids = new();
+        private readonly Dictionary<string, (BoneAnimator Animator, string VmdPath)> _animators = new();
 
         public double ModelScale { get; private set; } = 1.0;
         public double ModelHeight { get; private set; } = 1.0;
@@ -67,6 +76,8 @@ namespace ObjLoader.Services.Rendering
                 GpuResourceCache.Instance.Remove(cacheKey);
                 _managedCacheKeys.Remove(cacheKey);
                 _boundingData.Remove(key);
+                _modelSkinningData.Remove(key);
+                _modelBones.Remove(key);
             }
 
             var modelSettings = ModelSettings.Instance;
@@ -389,12 +400,104 @@ namespace ObjLoader.Services.Rendering
         {
             var layers = new List<LayerRenderData>();
 
+            if (_skinningManager == null && _renderService.Device != null)
+            {
+                _skinningManager = new SkinningManager(_renderService.Device);
+            }
+
+            var validLayerGuids = new HashSet<string>();
+
             foreach (var kvp in localPlacements)
             {
                 var guid = kvp.Key;
+                validLayerGuids.Add(guid);
                 var info = kvp.Value;
                 var layer = info.Layer;
                 var resource = info.Resource;
+                ID3D11Buffer? overrideVB = null;
+
+                if (_skinningManager != null && !string.IsNullOrEmpty(layer.FilePath))
+                {
+                    if (!_modelSkinningData.ContainsKey(layer.FilePath))
+                    {
+                        if (Path.GetExtension(layer.FilePath).Equals(".pmx", StringComparison.OrdinalIgnoreCase) && File.Exists(layer.FilePath))
+                        {
+                            try
+                            {
+                                var pmxModel = new PmxParser().Parse(layer.FilePath);
+                                if (pmxModel.BoneWeights != null && pmxModel.Bones.Count > 0)
+                                {
+                                    _modelSkinningData[layer.FilePath] = (pmxModel.Vertices.ToArray(), pmxModel.BoneWeights);
+                                    _modelBones[layer.FilePath] = pmxModel.Bones;
+                                }
+                                else
+                                {
+                                    _modelSkinningData[layer.FilePath] = (Array.Empty<ObjVertex>(), Array.Empty<Core.Mmd.VertexBoneWeight>());
+                                    _modelBones[layer.FilePath] = new List<Core.Mmd.PmxBone>();
+                                }
+                            }
+                            catch
+                            {
+                                _modelSkinningData[layer.FilePath] = (Array.Empty<ObjVertex>(), Array.Empty<Core.Mmd.VertexBoneWeight>());
+                                _modelBones[layer.FilePath] = new List<Core.Mmd.PmxBone>();
+                            }
+                        }
+                        else
+                        {
+                            _modelSkinningData[layer.FilePath] = (Array.Empty<ObjVertex>(), Array.Empty<Core.Mmd.VertexBoneWeight>());
+                            _modelBones[layer.FilePath] = new List<Core.Mmd.PmxBone>();
+                        }
+                    }
+
+                    if (_modelSkinningData.TryGetValue(layer.FilePath, out var skinData) && skinData.Vertices.Length > 0)
+                    {
+                        bool needsRegister = true;
+                        if (_registeredSkinningGuids.TryGetValue(guid, out var currentPath) && currentPath == layer.FilePath)
+                        {
+                            needsRegister = false;
+                        }
+
+                        if (needsRegister)
+                        {
+                            _skinningManager.RegisterSkinningState(guid, layer.FilePath, skinData.Vertices, skinData.BoneWeights);
+                            _registeredSkinningGuids[guid] = layer.FilePath;
+                        }
+
+                        BoneAnimator? animator = null;
+                        if (!string.IsNullOrEmpty(layer.VmdFilePath) && File.Exists(layer.VmdFilePath))
+                        {
+                            if (!_animators.TryGetValue(guid, out var cache) || cache.VmdPath != layer.VmdFilePath)
+                            {
+                                try
+                                {
+                                    var vmdData = VmdParser.Parse(layer.VmdFilePath);
+                                    if (vmdData.BoneFrames.Count > 0 && _modelBones.TryGetValue(layer.FilePath, out var bones) && bones.Count > 0)
+                                    {
+                                        animator = new BoneAnimator(bones, vmdData.BoneFrames);
+                                        _animators[guid] = (animator, layer.VmdFilePath);
+                                    }
+                                }
+                                catch { }
+                            }
+                            else
+                            {
+                                animator = cache.Animator;
+                            }
+                        }
+
+                        if (animator != null)
+                        {
+                            double motionTime = (currentFrame / fps) - layer.VmdTimeOffset;
+                            if (motionTime < 0) motionTime = 0;
+                            _skinningManager.ProcessSkinning(guid, layer.FilePath, animator, motionTime);
+                            overrideVB = _skinningManager.GetOverrideVertexBuffer(guid);
+                        }
+                        else
+                        {
+                            _skinningManager.ProcessSkinning(guid, layer.FilePath, null, 0);
+                        }
+                    }
+                }
 
                 if (!globalPlacements.TryGetValue(guid, out var globalPlacement))
                     globalPlacement = info.Local;
@@ -425,10 +528,20 @@ namespace ObjLoader.Services.Rendering
                     LightEnabled = lightEnabled,
                     WorldId = worldId,
                     HeightOffset = 0,
-                    VisibleParts = layer.VisibleParts
+                    VisibleParts = layer.VisibleParts,
+                    Data = layer,
+                    OverrideVB = overrideVB
                 });
             }
 
+            var animatorsToRemove = new List<string>();
+            foreach (var key in _animators.Keys) if (!validLayerGuids.Contains(key)) animatorsToRemove.Add(key);
+            foreach (var key in animatorsToRemove)
+            {
+                _animators.Remove(key);
+                _registeredSkinningGuids.Remove(key);
+                _skinningManager?.RemoveSkinningState(key);
+            }
             return layers;
         }
 
@@ -445,6 +558,7 @@ namespace ObjLoader.Services.Rendering
             {
                 disposableTextureService.Dispose();
             }
+            _skinningManager?.Dispose();
         }
 
         private static void SafeDispose(IDisposable? disposable)

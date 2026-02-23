@@ -8,18 +8,17 @@ using ObjLoader.Services.Mmd.Animation;
 using System.IO;
 using System.Runtime.CompilerServices;
 using Vortice.Direct3D11;
-using YukkuriMovieMaker.Commons;
 
 namespace ObjLoader.Rendering.Managers
 {
     public sealed class SkinningManager : ISkinningManager
     {
         private readonly Dictionary<string, SkinningState> _skinningStates = new Dictionary<string, SkinningState>();
-        private readonly IGraphicsDevicesAndContext _devices;
+        private readonly ID3D11Device _device;
 
-        public SkinningManager(IGraphicsDevicesAndContext devices)
+        public SkinningManager(ID3D11Device device)
         {
-            _devices = devices;
+            _device = device;
         }
 
         public void RegisterSkinningState(string guid, string filePath, ObjVertex[] vertices, VertexBoneWeight[] boneWeights)
@@ -108,7 +107,7 @@ namespace ObjLoader.Rendering.Managers
             try
             {
                 var boneTransforms = animator.ComputeBoneTransforms(currentTime);
-                var device = _devices.D3D.Device;
+                var device = _device;
                 var context = device.ImmediateContext;
 
                 if (skinState.GpuProcessor == null)
