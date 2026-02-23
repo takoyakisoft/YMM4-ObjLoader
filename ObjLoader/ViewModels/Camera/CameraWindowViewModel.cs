@@ -349,6 +349,8 @@ namespace ObjLoader.ViewModels.Camera
                 var layer = _parameter.Layers[_parameter.SelectedLayerIndex];
 
                 layer.VmdMotionData = vmdData;
+                layer.VmdFilePath = dialog.FileName;
+                layer.VmdTimeOffset = 0;
 
                 if (vmdData.BoneFrames.Count > 0)
                 {

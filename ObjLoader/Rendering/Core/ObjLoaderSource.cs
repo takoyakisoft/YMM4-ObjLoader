@@ -8,6 +8,8 @@ using ObjLoader.Rendering.Managers;
 using ObjLoader.Rendering.Managers.Interfaces;
 using ObjLoader.Rendering.Renderers;
 using ObjLoader.Rendering.Shaders;
+using ObjLoader.Services.Mmd.Animation;
+using ObjLoader.Services.Mmd.Parsers;
 using ObjLoader.Services.Textures;
 using ObjLoader.Settings;
 using ObjLoader.Utilities;
@@ -506,7 +508,30 @@ namespace ObjLoader.Rendering.Core
 
                     if (resource != null)
                     {
-                        _skinningManager.ProcessSkinning(item.Guid, layerState.FilePath, item.Data.BoneAnimatorInstance, _currentTime);
+                        if (item.Data.BoneAnimatorInstance == null && !string.IsNullOrEmpty(item.Data.VmdFilePath) && File.Exists(item.Data.VmdFilePath))
+                        {
+                            try
+                            {
+                                var vmdData = VmdParser.Parse(item.Data.VmdFilePath);
+                                item.Data.VmdMotionData = vmdData;
+                                if (vmdData.BoneFrames.Count > 0 && Path.GetExtension(layerState.FilePath).Equals(".pmx", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    var pmxModel = new PmxParser().Parse(layerState.FilePath);
+                                    if (pmxModel.Bones.Count > 0)
+                                    {
+                                        item.Data.BoneAnimatorInstance = new BoneAnimator(pmxModel.Bones, vmdData.BoneFrames, pmxModel.RigidBodies, pmxModel.Joints);
+                                    }
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+
+                        double motionTime = _currentTime - item.Data.VmdTimeOffset;
+                        if (motionTime < 0) motionTime = 0;
+
+                        _skinningManager.ProcessSkinning(item.Guid, layerState.FilePath, item.Data.BoneAnimatorInstance, motionTime);
 
                         ID3D11Buffer? overrideVB = _skinningManager.GetOverrideVertexBuffer(item.Guid);
 

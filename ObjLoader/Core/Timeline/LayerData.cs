@@ -43,13 +43,26 @@ namespace ObjLoader.Core.Timeline
             set
             {
                 var sanitized = SanitizeFilePath(value);
-                if (Set(ref _filePath, sanitized))
+                Set(ref _filePath, sanitized);
+            }
+        }
+
+        private string _vmdFilePath = string.Empty;
+        public string VmdFilePath
+        {
+            get => _vmdFilePath;
+            set
+            {
+                if (Set(ref _vmdFilePath, value ?? string.Empty))
                 {
                     VmdMotionData = null;
                     BoneAnimatorInstance = null;
                 }
             }
         }
+
+        private double _vmdTimeOffset;
+        public double VmdTimeOffset { get => _vmdTimeOffset; set => Set(ref _vmdTimeOffset, value); }
 
         private Color _baseColor = Colors.White;
         public Color BaseColor { get => _baseColor; set => Set(ref _baseColor, value); }
@@ -101,9 +114,6 @@ namespace ObjLoader.Core.Timeline
         [JsonIgnore]
         public BoneAnimator? BoneAnimatorInstance { get; set; }
 
-        public bool ShouldSerializeVmdMotionData() => false;
-        public bool ShouldSerializeBoneAnimatorInstance() => false;
-
         private static string SanitizeFilePath(string? value)
         {
             if (string.IsNullOrWhiteSpace(value)) return string.Empty;
@@ -143,6 +153,10 @@ namespace ObjLoader.Core.Timeline
                 RotationCenterZ = RotationCenterZ
             };
             clone._filePath = _filePath;
+            clone._vmdFilePath = _vmdFilePath;
+            clone._vmdTimeOffset = _vmdTimeOffset;
+            clone.VmdMotionData = VmdMotionData;
+            clone.BoneAnimatorInstance = BoneAnimatorInstance;
             clone.X.CopyFrom(X);
             clone.Y.CopyFrom(Y);
             clone.Z.CopyFrom(Z);
