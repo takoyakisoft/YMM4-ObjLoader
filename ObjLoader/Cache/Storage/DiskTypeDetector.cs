@@ -1,7 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Storage
 {
     public static class DiskTypeDetector
     {

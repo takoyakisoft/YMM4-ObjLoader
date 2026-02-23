@@ -1,4 +1,5 @@
 ﻿using ObjLoader.Attributes;
+using ObjLoader.Cache.Streaming;
 using ObjLoader.Core.Interfaces;
 using ObjLoader.Core.Mmd;
 using ObjLoader.Core.Models;
@@ -8,10 +9,12 @@ using System.Text;
 
 namespace ObjLoader.Parsers
 {
-    [ModelParser(2, ".pmx")]
-    public class PmxParser : IModelParser
+    [ModelParser(3, ".pmx")]
+    public class PmxParser : IStreamingModelParser
     {
         public bool CanParse(string extension) => extension == ".pmx";
+
+        public bool SupportsStreaming => true;
 
         public unsafe ObjModel Parse(string path)
         {
@@ -435,6 +438,506 @@ namespace ObjLoader.Parsers
             }
 
             return new ObjModel { Vertices = vertices, Indices = indices, Parts = parts, ModelCenter = c, ModelScale = s, Name = name, NameEn = nameEn, Comment = comment, CommentEn = commentEn, Bones = bones, BoneWeights = boneWeights, Morphs = morphs, DisplayFrames = displayFrames, RigidBodies = rigidBodies, Joints = joints };
+        }
+
+        public unsafe ObjModel StreamToCache(string path, IStreamingCacheWriter cacheWriter)
+        {
+            string vertexTempPath = Path.GetTempFileName();
+            string indexTempPath = Path.GetTempFileName();
+
+            try
+            {
+                using var fs = File.OpenRead(path);
+                using var br = new BinaryReader(fs);
+
+                var magic = br.ReadBytes(4);
+                if (Encoding.ASCII.GetString(magic) != "PMX ") return new ObjModel();
+
+                float ver = br.ReadSingle();
+                byte globalCount = br.ReadByte();
+                var globals = br.ReadBytes(globalCount);
+
+                if (globals.Length < 8)
+                {
+                    var newGlobals = new byte[8];
+                    Array.Copy(globals, newGlobals, globals.Length);
+                    globals = newGlobals;
+                }
+
+                Encoding encoding = globals[0] == 0 ? Encoding.Unicode : Encoding.UTF8;
+                int addUvCount = globals[1];
+                int vertexIdxSize = globals[2];
+                int textureIdxSize = globals[3];
+                int materialIdxSize = globals[4];
+                int boneIdxSize = globals[5];
+                int morphIdxSize = globals[6];
+                int rigidIdxSize = globals[7];
+
+                int len = br.ReadInt32();
+                string name = encoding.GetString(br.ReadBytes(len)).Trim().Replace("\0", "");
+                len = br.ReadInt32();
+                string nameEn = encoding.GetString(br.ReadBytes(len));
+                len = br.ReadInt32();
+                string comment = encoding.GetString(br.ReadBytes(len)).Trim().Replace("\0", "");
+                len = br.ReadInt32();
+                string commentEn = encoding.GetString(br.ReadBytes(len));
+
+                int vCount = br.ReadInt32();
+                var boneWeights = new VertexBoneWeight[vCount];
+
+                Vector3 boundsMin = new Vector3(float.MaxValue);
+                Vector3 boundsMax = new Vector3(float.MinValue);
+
+                const int ChunkSize = 4096;
+                var vertexChunk = new ObjVertex[ChunkSize];
+                int chunkPos = 0;
+
+                using (var vtf = new FileStream(vertexTempPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536))
+                {
+                    for (int i = 0; i < vCount; i++)
+                    {
+                        Vector3 p = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                        Vector3 n = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                        Vector2 uv = new Vector2(br.ReadSingle(), br.ReadSingle());
+
+                        if (addUvCount > 0)
+                        {
+                            int skip = addUvCount * 16;
+                            for (int k = 0; k < skip; k++) br.ReadByte();
+                        }
+
+                        byte weightType = br.ReadByte();
+                        var bw = new VertexBoneWeight();
+
+                        switch (weightType)
+                        {
+                            case 0:
+                                bw.BoneIndex0 = ReadBoneIndex(br, boneIdxSize);
+                                bw.Weight0 = 1.0f;
+                                bw.BoneIndex1 = -1; bw.BoneIndex2 = -1; bw.BoneIndex3 = -1;
+                                break;
+                            case 1:
+                                bw.BoneIndex0 = ReadBoneIndex(br, boneIdxSize);
+                                bw.BoneIndex1 = ReadBoneIndex(br, boneIdxSize);
+                                bw.Weight0 = br.ReadSingle();
+                                bw.Weight1 = 1.0f - bw.Weight0;
+                                bw.BoneIndex2 = -1; bw.BoneIndex3 = -1;
+                                break;
+                            case 2:
+                            case 4:
+                                bw.BoneIndex0 = ReadBoneIndex(br, boneIdxSize);
+                                bw.BoneIndex1 = ReadBoneIndex(br, boneIdxSize);
+                                bw.BoneIndex2 = ReadBoneIndex(br, boneIdxSize);
+                                bw.BoneIndex3 = ReadBoneIndex(br, boneIdxSize);
+                                bw.Weight0 = br.ReadSingle();
+                                bw.Weight1 = br.ReadSingle();
+                                bw.Weight2 = br.ReadSingle();
+                                bw.Weight3 = br.ReadSingle();
+                                break;
+                            case 3:
+                                bw.BoneIndex0 = ReadBoneIndex(br, boneIdxSize);
+                                bw.BoneIndex1 = ReadBoneIndex(br, boneIdxSize);
+                                bw.Weight0 = br.ReadSingle();
+                                bw.Weight1 = 1.0f - bw.Weight0;
+                                bw.BoneIndex2 = -1; bw.BoneIndex3 = -1;
+                                for (int k = 0; k < 36; k++) br.ReadByte();
+                                break;
+                        }
+
+                        boneWeights[i] = bw;
+                        br.ReadSingle();
+
+                        vertexChunk[chunkPos] = new ObjVertex { Position = p, Normal = n, TexCoord = uv };
+                        boundsMin = Vector3.Min(boundsMin, p);
+                        boundsMax = Vector3.Max(boundsMax, p);
+                        chunkPos++;
+
+                        if (chunkPos == ChunkSize)
+                        {
+                            fixed (ObjVertex* pV = vertexChunk)
+                            {
+                                var span = new ReadOnlySpan<byte>(pV, chunkPos * sizeof(ObjVertex));
+                                vtf.Write(span);
+                            }
+                            chunkPos = 0;
+                        }
+                    }
+
+                    if (chunkPos > 0)
+                    {
+                        fixed (ObjVertex* pV = vertexChunk)
+                        {
+                            var span = new ReadOnlySpan<byte>(pV, chunkPos * sizeof(ObjVertex));
+                            vtf.Write(span);
+                        }
+                    }
+                }
+
+                int iCount = br.ReadInt32();
+                var indexChunk = new int[ChunkSize];
+                int idxChunkPos = 0;
+
+                using (var itf = new FileStream(indexTempPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536))
+                {
+                    for (int i = 0; i < iCount; i++)
+                    {
+                        if (vertexIdxSize == 1) indexChunk[idxChunkPos] = br.ReadByte();
+                        else if (vertexIdxSize == 2) indexChunk[idxChunkPos] = br.ReadUInt16();
+                        else indexChunk[idxChunkPos] = br.ReadInt32();
+                        idxChunkPos++;
+
+                        if (idxChunkPos == ChunkSize)
+                        {
+                            fixed (int* pI = indexChunk)
+                            {
+                                var span = new ReadOnlySpan<byte>(pI, idxChunkPos * sizeof(int));
+                                itf.Write(span);
+                            }
+                            idxChunkPos = 0;
+                        }
+                    }
+
+                    if (idxChunkPos > 0)
+                    {
+                        fixed (int* pI = indexChunk)
+                        {
+                            var span = new ReadOnlySpan<byte>(pI, idxChunkPos * sizeof(int));
+                            itf.Write(span);
+                        }
+                    }
+                }
+
+                int tCount = br.ReadInt32();
+                var texturePaths = new string[tCount];
+                for (int i = 0; i < tCount; i++)
+                {
+                    len = br.ReadInt32();
+                    var bytes = br.ReadBytes(len);
+                    string tPath = encoding.GetString(bytes);
+                    if (tPath.Contains("*")) tPath = "";
+                    else
+                    {
+                        tPath = tPath.Replace('\\', Path.DirectorySeparatorChar);
+                        if (!Path.IsPathRooted(tPath))
+                            tPath = Path.Combine(Path.GetDirectoryName(path) ?? "", tPath);
+                    }
+                    texturePaths[i] = tPath;
+                }
+
+                int mCount = br.ReadInt32();
+                var parts = new List<ModelPart>(mCount);
+                int indexOffset = 0;
+
+                for (int i = 0; i < mCount; i++)
+                {
+                    len = br.ReadInt32();
+                    var mNameBytes = br.ReadBytes(len);
+                    string mName = encoding.GetString(mNameBytes).Trim().Replace("\0", "");
+                    len = br.ReadInt32();
+                    br.ReadBytes(len);
+
+                    Vector4 diff = new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                    new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                    br.ReadSingle();
+                    new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                    br.ReadByte();
+                    new Vector4(br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                    br.ReadSingle();
+
+                    int texIdx = -1;
+                    if (textureIdxSize == 1) texIdx = br.ReadSByte();
+                    else if (textureIdxSize == 2) texIdx = br.ReadInt16();
+                    else texIdx = br.ReadInt32();
+
+                    if (textureIdxSize == 1) br.ReadSByte();
+                    else if (textureIdxSize == 2) br.ReadInt16();
+                    else br.ReadInt32();
+
+                    br.ReadByte();
+                    byte sharedToon = br.ReadByte();
+
+                    if (sharedToon == 0)
+                    {
+                        if (textureIdxSize == 1) br.ReadSByte();
+                        else if (textureIdxSize == 2) br.ReadInt16();
+                        else br.ReadInt32();
+                    }
+                    else
+                    {
+                        br.ReadByte();
+                    }
+
+                    len = br.ReadInt32();
+                    br.ReadBytes(len);
+
+                    int faceCount = br.ReadInt32();
+
+                    string texPath = "";
+                    if (texIdx >= 0 && texIdx < tCount) texPath = texturePaths[texIdx];
+
+                    parts.Add(new ModelPart
+                    {
+                        Name = mName,
+                        TexturePath = texPath,
+                        IndexOffset = indexOffset,
+                        IndexCount = faceCount,
+                        BaseColor = diff,
+                        Center = Vector3.Zero
+                    });
+
+                    indexOffset += faceCount;
+                }
+
+                Vector3 boundsSize = boundsMax - boundsMin;
+                Vector3 center = (boundsMin + boundsMax) * 0.5f;
+                float maxDim = Math.Max(boundsSize.X, Math.Max(boundsSize.Y, boundsSize.Z));
+                float scale = maxDim > 1e-6f ? 1.5f / maxDim : 1.0f;
+
+                cacheWriter.WriteMetadata(vCount, iCount, parts, center, scale);
+
+                var streamBuffer = new byte[65536];
+
+                using (var vtf = new FileStream(vertexTempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan))
+                {
+                    int read;
+                    while ((read = vtf.Read(streamBuffer)) > 0)
+                    {
+                        cacheWriter.WriteVertexChunk(streamBuffer.AsSpan(0, read));
+                    }
+                }
+
+                using (var itf = new FileStream(indexTempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan))
+                {
+                    int read;
+                    while ((read = itf.Read(streamBuffer)) > 0)
+                    {
+                        cacheWriter.WriteIndexChunk(streamBuffer.AsSpan(0, read));
+                    }
+                }
+
+                var bones = new List<PmxBone>();
+                var rigidBodies = new List<PmxRigidBody>();
+                var joints = new List<PmxJoint>();
+                var morphs = new List<PmxMorph>();
+                var displayFrames = new List<PmxDisplayFrame>();
+
+                if (fs.Position < fs.Length)
+                {
+                    try
+                    {
+                        int boneCount = br.ReadInt32();
+                        for (int i = 0; i < boneCount; i++)
+                        {
+                            len = br.ReadInt32();
+                            string boneName = encoding.GetString(br.ReadBytes(len)).Trim().Replace("\0", "");
+                            len = br.ReadInt32();
+                            string boneNameEn = encoding.GetString(br.ReadBytes(len)).Trim().Replace("\0", "");
+
+                            Vector3 bonePos = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                            int parentIdx = -1;
+                            if (boneIdxSize == 1) parentIdx = br.ReadSByte();
+                            else if (boneIdxSize == 2) parentIdx = br.ReadInt16();
+                            else parentIdx = br.ReadInt32();
+
+                            int deformLayer = br.ReadInt32();
+                            ushort boneFlags = br.ReadUInt16();
+
+                            var pmxBone = new PmxBone
+                            {
+                                Name = boneName,
+                                NameEn = boneNameEn,
+                                ParentIndex = parentIdx,
+                                Position = bonePos,
+                                DeformLayer = deformLayer,
+                                BoneFlags = boneFlags
+                            };
+
+                            if ((boneFlags & 0x0001) != 0)
+                            {
+                                if (boneIdxSize == 1) pmxBone.ConnectionIndex = br.ReadSByte();
+                                else if (boneIdxSize == 2) pmxBone.ConnectionIndex = br.ReadInt16();
+                                else pmxBone.ConnectionIndex = br.ReadInt32();
+                            }
+                            else
+                            {
+                                pmxBone.ConnectionPosition = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                            }
+
+                            if ((boneFlags & 0x0100) != 0 || (boneFlags & 0x0200) != 0)
+                            {
+                                if (boneIdxSize == 1) pmxBone.AdditionalParentIndex = br.ReadSByte();
+                                else if (boneIdxSize == 2) pmxBone.AdditionalParentIndex = br.ReadInt16();
+                                else pmxBone.AdditionalParentIndex = br.ReadInt32();
+                                pmxBone.AdditionalParentRatio = br.ReadSingle();
+                            }
+
+                            if ((boneFlags & 0x0400) != 0)
+                            {
+                                pmxBone.AxisX = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                            }
+
+                            if ((boneFlags & 0x0800) != 0)
+                            {
+                                pmxBone.AxisX = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                pmxBone.AxisZ = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                            }
+
+                            if ((boneFlags & 0x2000) != 0)
+                            {
+                                pmxBone.ExportKey = br.ReadInt32();
+                            }
+
+                            if ((boneFlags & 0x0020) != 0)
+                            {
+                                pmxBone.IkData = new PmxIkData();
+                                if (boneIdxSize == 1) pmxBone.IkData.TargetIndex = br.ReadSByte();
+                                else if (boneIdxSize == 2) pmxBone.IkData.TargetIndex = br.ReadInt16();
+                                else pmxBone.IkData.TargetIndex = br.ReadInt32();
+                                pmxBone.IkData.LoopCount = br.ReadInt32();
+                                pmxBone.IkData.LimitAngle = br.ReadSingle();
+                                int ikLinkCount = br.ReadInt32();
+                                for (int j = 0; j < ikLinkCount; j++)
+                                {
+                                    var link = new PmxIkLink();
+                                    if (boneIdxSize == 1) link.BoneIndex = br.ReadSByte();
+                                    else if (boneIdxSize == 2) link.BoneIndex = br.ReadInt16();
+                                    else link.BoneIndex = br.ReadInt32();
+                                    link.HasLimit = br.ReadByte();
+                                    if (link.HasLimit != 0)
+                                    {
+                                        link.LimitMin = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                        link.LimitMax = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                    }
+                                    pmxBone.IkData.Links.Add(link);
+                                }
+                            }
+
+                            bones.Add(pmxBone);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (fs.Position < fs.Length)
+                {
+                    try
+                    {
+                        morphs = ReadMorphSection(br, encoding, vertexIdxSize, boneIdxSize, materialIdxSize, morphIdxSize, rigidIdxSize);
+                        displayFrames = ReadDisplayFrameSection(br, encoding, boneIdxSize, morphIdxSize);
+
+                        int rbCount = br.ReadInt32();
+                        for (int i = 0; i < rbCount; i++)
+                        {
+                            len = br.ReadInt32();
+                            string rbName = encoding.GetString(br.ReadBytes(len)).Trim().Replace("\0", "");
+                            len = br.ReadInt32();
+                            encoding.GetString(br.ReadBytes(len));
+
+                            int rbBoneIdx = ReadBoneIndex(br, boneIdxSize);
+                            byte group = br.ReadByte();
+                            ushort mask = br.ReadUInt16();
+                            byte shape = br.ReadByte();
+                            Vector3 size = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                            Vector3 pos = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                            Vector3 rot = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                            float mass = br.ReadSingle();
+                            float linearDamp = br.ReadSingle();
+                            float angularDamp = br.ReadSingle();
+                            float restitution = br.ReadSingle();
+                            float friction = br.ReadSingle();
+                            byte mode = br.ReadByte();
+
+                            rigidBodies.Add(new PmxRigidBody
+                            {
+                                Name = rbName,
+                                BoneIndex = rbBoneIdx,
+                                CollisionGroup = group,
+                                CollisionMask = mask,
+                                ShapeType = shape,
+                                ShapeSize = size,
+                                Position = pos,
+                                Rotation = rot,
+                                Mass = mass,
+                                LinearDamping = linearDamp,
+                                AngularDamping = angularDamp,
+                                Restitution = restitution,
+                                Friction = friction,
+                                PhysicsMode = mode
+                            });
+                        }
+
+                        if (fs.Position < fs.Length)
+                        {
+                            int jCount = br.ReadInt32();
+                            for (int i = 0; i < jCount; i++)
+                            {
+                                len = br.ReadInt32();
+                                string jName = encoding.GetString(br.ReadBytes(len)).Trim().Replace("\0", "");
+                                len = br.ReadInt32();
+                                encoding.GetString(br.ReadBytes(len));
+
+                                br.ReadByte();
+                                int rbIdxA = ReadRigidBodyIndex(br, rigidIdxSize);
+                                int rbIdxB = ReadRigidBodyIndex(br, rigidIdxSize);
+                                Vector3 jPos = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                Vector3 jRot = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                Vector3 tMin = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                Vector3 tMax = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                Vector3 rMin = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                Vector3 rMax = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                Vector3 sTrans = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                Vector3 sRot = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+
+                                joints.Add(new PmxJoint
+                                {
+                                    Name = jName,
+                                    RigidBodyIndexA = rbIdxA,
+                                    RigidBodyIndexB = rbIdxB,
+                                    Position = jPos,
+                                    Rotation = jRot,
+                                    TranslationLimitMin = tMin,
+                                    TranslationLimitMax = tMax,
+                                    RotationLimitMin = rMin,
+                                    RotationLimitMax = rMax,
+                                    SpringTranslation = sTrans,
+                                    SpringRotation = sRot
+                                });
+                            }
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                return new ObjModel
+                {
+                    Vertices = Array.Empty<ObjVertex>(),
+                    Indices = Array.Empty<int>(),
+                    Parts = parts,
+                    ModelCenter = center,
+                    ModelScale = scale,
+                    Name = name,
+                    NameEn = nameEn,
+                    Comment = comment,
+                    CommentEn = commentEn,
+                    Bones = bones,
+                    BoneWeights = boneWeights,
+                    Morphs = morphs,
+                    DisplayFrames = displayFrames,
+                    RigidBodies = rigidBodies,
+                    Joints = joints
+                };
+            }
+            finally
+            {
+                try { if (File.Exists(vertexTempPath)) File.Delete(vertexTempPath); } catch { }
+                try { if (File.Exists(indexTempPath)) File.Delete(indexTempPath); } catch { }
+            }
         }
 
         private static int ReadBoneIndex(BinaryReader br, int size)

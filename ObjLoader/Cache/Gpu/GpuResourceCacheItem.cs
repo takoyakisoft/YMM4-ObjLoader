@@ -2,7 +2,7 @@
 using Vortice.Direct3D11;
 using ObjLoader.Core.Models;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Gpu
 {
     internal sealed class GpuResourceCacheItem : IDisposable
     {

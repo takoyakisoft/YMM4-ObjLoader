@@ -1,4 +1,4 @@
-﻿using ObjLoader.Cache;
+﻿using ObjLoader.Cache.Gpu;
 using ObjLoader.Core.Models;
 using ObjLoader.Core.Timeline;
 using ObjLoader.Plugin;

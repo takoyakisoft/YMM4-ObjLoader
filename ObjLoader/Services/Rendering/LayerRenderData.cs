@@ -1,4 +1,4 @@
-﻿using ObjLoader.Cache;
+﻿using ObjLoader.Cache.Gpu;
 using ObjLoader.Core.Timeline;
 using System.Numerics;
 

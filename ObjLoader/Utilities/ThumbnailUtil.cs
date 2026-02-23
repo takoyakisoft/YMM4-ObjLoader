@@ -1,4 +1,5 @@
-﻿using ObjLoader.Core.Models;
+﻿using ObjLoader.Core.Interfaces;
+using ObjLoader.Core.Models;
 using ObjLoader.Services.Textures;
 using System.IO;
 using System.Windows;
@@ -9,6 +10,14 @@ using System.Windows.Media.Media3D;
 
 namespace ObjLoader.Utilities
 {
+    public class DefaultThumbnailProvider : IThumbnailProvider
+    {
+        public byte[] CreateThumbnail(ObjModel model, int width = 64, int height = 64)
+        {
+            return ThumbnailUtil.CreateThumbnail(model, width, height);
+        }
+    }
+
     public static class ThumbnailUtil
     {
         public static byte[] CreateThumbnail(ObjModel model, int width = 64, int height = 64, int indexOffset = 0, int indexCount = -1, HashSet<int>? visiblePartIndices = null)

@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Gpu
 {
     internal interface IGpuResourceCache
     {

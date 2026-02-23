@@ -1,8 +1,8 @@
 using System.Windows.Input;
 using YukkuriMovieMaker.Commons;
 using ObjLoader.Localization;
-using ObjLoader.Cache;
 using ObjLoader.Utilities;
+using ObjLoader.Cache.Core;
 
 namespace ObjLoader.ViewModels.Settings
 {

@@ -1,5 +1,4 @@
 ﻿using System.IO;
-using ObjLoader.Cache;
 using ObjLoader.Infrastructure;
 using ObjLoader.Localization;
 using ObjLoader.Utilities;
@@ -7,6 +6,7 @@ using ObjLoader.Views.Controls;
 using ObjLoader.ViewModels.Settings;
 using Vortice.DXGI;
 using YukkuriMovieMaker.Plugin;
+using ObjLoader.Cache.Core;
 
 namespace ObjLoader.Settings
 {

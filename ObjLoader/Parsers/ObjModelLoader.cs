@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Reflection;
-using ObjLoader.Cache;
+using ObjLoader.Cache.Core;
+using ObjLoader.Cache.Streaming;
 using ObjLoader.Core.Interfaces;
 using ObjLoader.Core.Models;
 using ObjLoader.Localization;
@@ -144,6 +145,11 @@ namespace ObjLoader.Parsers
                 return cachedModel;
             }
 
+            if (parser is IStreamingModelParser streamingParser && streamingParser.SupportsStreaming)
+            {
+                return LoadWithStreaming(path, streamingParser, parserId, parserVersion, fileInfo);
+            }
+
             var model = parser?.Parse(path) ?? new ObjModel();
 
             if (model.Vertices.Length > 0)
@@ -155,14 +161,110 @@ namespace ObjLoader.Parsers
 
                 var thumb = ThumbnailUtil.CreateThumbnail(model);
                 _cache.Save(path, model, thumb, fileInfo.LastWriteTimeUtc, parserId, parserVersion, PluginVersion);
+                if (thumb.Length > 0)
+                {
+                    _cache.SaveThumbnailFile(path, thumb);
+                }
             }
 
             return model;
         }
 
+        private ObjModel LoadWithStreaming(string path, IStreamingModelParser streamingParser, string parserId, int parserVersion, FileInfo fileInfo)
+        {
+            StreamingCacheWriter? writer = null;
+            try
+            {
+                string fileHash = ComputeFileHashForStreaming(path);
+                var header = new CacheHeader(fileInfo.LastWriteTimeUtc.ToBinary(), path, parserId, parserVersion, PluginVersion, fileHash);
+                var emptyThumb = Array.Empty<byte>();
+
+                writer = (StreamingCacheWriter)_cache.CreateStreamingWriter(path, header, emptyThumb);
+
+                var lightModel = streamingParser.StreamToCache(path, writer);
+
+                _cache.FinalizeStreamingCache(path, writer, lightModel);
+
+                lightModel = null;
+
+                if (!_cache.TryLoad(path, fileInfo.LastWriteTimeUtc, parserId, parserVersion, PluginVersion, out var fullModel))
+                {
+                    return LoadWithFallback(path, streamingParser, parserId, parserVersion, fileInfo);
+                }
+
+                if (!ValidateModelComplexity(path, fullModel))
+                {
+                    return new ObjModel();
+                }
+
+                try
+                {
+                    var thumb = ThumbnailUtil.CreateThumbnail(fullModel);
+                    if (thumb.Length > 0)
+                    {
+                        _cache.SaveThumbnailFile(path, thumb);
+                    }
+                }
+                catch { }
+
+                return fullModel;
+            }
+            catch
+            {
+                writer?.Rollback();
+
+                return LoadWithFallback(path, streamingParser, parserId, parserVersion, fileInfo);
+            }
+        }
+
+        private ObjModel LoadWithFallback(string path, IModelParser parser, string parserId, int parserVersion, FileInfo fileInfo)
+        {
+            try
+            {
+                var model = parser.Parse(path);
+                if (model.Vertices.Length > 0)
+                {
+                    if (!ValidateModelComplexity(path, model))
+                    {
+                        return new ObjModel();
+                    }
+
+                    var thumb = ThumbnailUtil.CreateThumbnail(model);
+                    _cache.Save(path, model, thumb, fileInfo.LastWriteTimeUtc, parserId, parserVersion, PluginVersion);
+                    if (thumb.Length > 0)
+                    {
+                        _cache.SaveThumbnailFile(path, thumb);
+                    }
+                }
+                return model;
+            }
+            catch
+            {
+                return new ObjModel();
+            }
+        }
+
+        private static string ComputeFileHashForStreaming(string path)
+        {
+            try
+            {
+                using var sha = System.Security.Cryptography.SHA256.Create();
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+                var hash = sha.ComputeHash(stream);
+                return BitConverter.ToString(hash).Replace("-", "");
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
         public byte[] GetThumbnail(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return Array.Empty<byte>();
+
+            var thumbFile = _cache.LoadThumbnailFile(path);
+            if (thumbFile.Length > 0) return thumbFile;
 
             var parser = GetParser(path);
             var parserId = parser?.GetType().Name ?? string.Empty;
@@ -173,6 +275,9 @@ namespace ObjLoader.Parsers
             if (thumb.Length > 0) return thumb;
 
             var model = Load(path);
+            thumbFile = _cache.LoadThumbnailFile(path);
+            if (thumbFile.Length > 0) return thumbFile;
+
             return _cache.GetThumbnail(path, fileInfo.LastWriteTimeUtc, parserId, parserVersion, PluginVersion);
         }
 

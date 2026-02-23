@@ -4,7 +4,7 @@ using ObjLoader.Attributes;
 using ObjLoader.Core.Models;
 using ObjLoader.Core.Mmd;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Extensions
 {
     [ExtensionCacheProvider]
     public class PmxExtensionCacheProvider : IExtensionCacheProvider

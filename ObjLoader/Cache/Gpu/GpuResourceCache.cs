@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using ObjLoader.Infrastructure;
 using Vortice.Direct3D11;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Gpu
 {
     internal sealed class GpuResourceCache : IGpuResourceCache, IDisposable
     {

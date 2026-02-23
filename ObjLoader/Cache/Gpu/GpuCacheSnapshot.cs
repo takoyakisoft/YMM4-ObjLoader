@@ -1,4 +1,4 @@
-﻿namespace ObjLoader.Cache
+﻿namespace ObjLoader.Cache.Gpu
 {
     internal sealed class GpuCacheSnapshot
     {

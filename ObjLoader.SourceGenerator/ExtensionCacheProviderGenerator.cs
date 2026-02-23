@@ -22,7 +22,7 @@ namespace ObjLoader.SourceGenerator
 
             var sb = new StringBuilder();
             sb.AppendLine("using System.Collections.Generic;");
-            sb.AppendLine("using ObjLoader.Cache;");
+            sb.AppendLine("using ObjLoader.Cache.Extensions;");
             sb.AppendLine("");
             sb.AppendLine("namespace ObjLoader.Cache.Generated");
             sb.AppendLine("{");

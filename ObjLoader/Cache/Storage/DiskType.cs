@@ -1,4 +1,4 @@
-﻿namespace ObjLoader.Cache
+﻿namespace ObjLoader.Cache.Storage
 {
     public enum DiskType
     {

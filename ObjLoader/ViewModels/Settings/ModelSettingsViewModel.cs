@@ -1,4 +1,5 @@
-﻿using ObjLoader.Cache;
+﻿using ObjLoader.Cache.Core;
+using ObjLoader.Cache.Gpu;
 using ObjLoader.Infrastructure;
 using ObjLoader.Localization;
 using ObjLoader.Rendering.Core;

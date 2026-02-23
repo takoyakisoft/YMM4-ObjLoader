@@ -2,11 +2,14 @@
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
+using ObjLoader.Cache.Extensions;
+using ObjLoader.Cache.Storage;
+using ObjLoader.Cache.Streaming;
+using ObjLoader.Cache.Utilities;
 using ObjLoader.Core.Models;
 using ObjLoader.Settings;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Core
 {
     public class ModelCache
     {
@@ -19,6 +22,140 @@ namespace ObjLoader.Cache
         public ModelCache()
         {
             _extensionProviders = Generated.ExtensionCacheProviderRegistry.GetProviders();
+        }
+
+        public IStreamingCacheWriter CreateStreamingWriter(string path, CacheHeader header, byte[] thumbnail, bool? forceSplit = null)
+        {
+            string root = Path.GetDirectoryName(path) ?? string.Empty;
+            string hash = ComputePathHash(path);
+            string cacheDir = Path.Combine(root, CacheDirName);
+            string modelCacheDir = Path.Combine(cacheDir, hash);
+
+            if (!Directory.Exists(cacheDir))
+            {
+                var di = Directory.CreateDirectory(cacheDir);
+                di.Attributes |= FileAttributes.Hidden;
+            }
+            if (!Directory.Exists(modelCacheDir))
+            {
+                Directory.CreateDirectory(modelCacheDir);
+            }
+
+            bool isSplit = forceSplit ?? (DiskTypeDetector.GetDiskType(root) == DiskType.Hdd);
+            var writer = new StreamingCacheWriter(modelCacheDir, isSplit);
+
+            writer.WriteHeader(header);
+            writer.WriteThumbnail(thumbnail);
+
+            return writer;
+        }
+
+        public void FinalizeStreamingCache(string path, StreamingCacheWriter writer, ObjModel model)
+        {
+            try
+            {
+                writer.Commit();
+
+                string root = Path.GetDirectoryName(path) ?? string.Empty;
+                string hash = ComputePathHash(path);
+                string modelCacheDir = Path.Combine(root, CacheDirName, hash);
+
+                IExtensionCacheProvider? activeProvider = null;
+                foreach (var p in _extensionProviders)
+                {
+                    if (p.HasExtensionData(model))
+                    {
+                        activeProvider = p;
+                        break;
+                    }
+                }
+
+                long totalSize = writer.GetTotalSize();
+                int partsCount = writer.GetPartsCount();
+
+                string extFile = Path.Combine(modelCacheDir, "ext.bin");
+                if (activeProvider != null)
+                {
+                    using var fsExt = new FileStream(extFile, FileMode.Create, FileAccess.Write, FileShare.None);
+                    using var bwExt = new BinaryWriter(fsExt);
+                    activeProvider.WriteExtensionData(bwExt, model);
+                    totalSize += new FileInfo(extFile).Length;
+                }
+                else if (File.Exists(extFile))
+                {
+                    File.Delete(extFile);
+                }
+
+                bool isSplit = writer.GetPartsCount() > 1;
+
+                var index = ModelSettings.Instance.GetCacheIndex();
+                index.Entries[path] = new CacheIndex.CacheEntry
+                {
+                    ModelHash = hash,
+                    OriginalPath = path,
+                    CacheRootPath = Path.Combine(CacheDirName, hash),
+                    TotalSize = totalSize,
+                    LastAccessTime = DateTime.Now,
+                    IsSplit = isSplit,
+                    PartsCount = partsCount,
+                    ExtensionProviderId = activeProvider?.ProviderId ?? string.Empty,
+                    HasExtensionCache = activeProvider != null
+                };
+                ModelSettings.Instance.SaveCacheIndex(index);
+
+                string legacyPath = path + ".bin";
+                if (File.Exists(legacyPath))
+                {
+                    File.Delete(legacyPath);
+                }
+            }
+            catch { }
+        }
+
+        public void SaveThumbnailFile(string path, byte[] thumbnail)
+        {
+            try
+            {
+                string root = Path.GetDirectoryName(path) ?? string.Empty;
+                string hash = ComputePathHash(path);
+                string modelCacheDir = Path.Combine(root, CacheDirName, hash);
+
+                if (!Directory.Exists(modelCacheDir)) return;
+
+                string thumbPath = Path.Combine(modelCacheDir, "thumb.png");
+                File.WriteAllBytes(thumbPath, thumbnail);
+            }
+            catch { }
+        }
+
+        public byte[] LoadThumbnailFile(string path)
+        {
+            try
+            {
+                var index = ModelSettings.Instance.GetCacheIndex();
+                string cacheDir = string.Empty;
+
+                if (index.Entries.TryGetValue(path, out var e))
+                {
+                    string root = Path.GetDirectoryName(path) ?? string.Empty;
+                    cacheDir = Path.Combine(root, CacheDirName, e.ModelHash);
+                }
+
+                if (string.IsNullOrEmpty(cacheDir))
+                {
+                    string hash = ComputePathHash(path);
+                    string root = Path.GetDirectoryName(path) ?? string.Empty;
+                    cacheDir = Path.Combine(root, CacheDirName, hash);
+                }
+
+                string thumbPath = Path.Combine(cacheDir, "thumb.png");
+                if (File.Exists(thumbPath))
+                {
+                    return File.ReadAllBytes(thumbPath);
+                }
+            }
+            catch { }
+            return Array.Empty<byte>();
         }
 
         public bool TryLoad(string path, DateTime originalTimestamp, string parserId, int parserVersion, string pluginVersion, out ObjModel model)
@@ -82,6 +219,12 @@ namespace ObjLoader.Cache
                             return false;
                         }
                     }
+                }
+
+                if (Directory.Exists(cachePath) && !CacheRepairUtil.ValidateCacheIntegrity(cachePath))
+                {
+                    CacheRepairUtil.RepairIfNeeded(cachePath);
+                    return false;
                 }
 
                 Stream stream;
@@ -268,6 +411,13 @@ namespace ObjLoader.Cache
 
         public byte[] GetThumbnail(string path, DateTime originalTimestamp, string parserId, int parserVersion, string pluginVersion)
         {
+            try
+            {
+                var thumbFile = LoadThumbnailFile(path);
+                if (thumbFile.Length > 0) return thumbFile;
+            }
+            catch { }
+
             try
             {
                 var index = ModelSettings.Instance.GetCacheIndex();

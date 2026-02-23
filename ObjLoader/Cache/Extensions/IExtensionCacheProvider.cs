@@ -1,7 +1,7 @@
 ﻿using System.IO;
 using ObjLoader.Core.Models;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Extensions
 {
     public interface IExtensionCacheProvider
     {

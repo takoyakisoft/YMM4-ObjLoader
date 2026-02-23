@@ -1,4 +1,4 @@
-﻿namespace ObjLoader.Cache
+﻿namespace ObjLoader.Cache.Core
 {
     public readonly struct CacheHeader
     {

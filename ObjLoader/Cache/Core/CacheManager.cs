@@ -3,7 +3,7 @@ using ObjLoader.Localization;
 using ObjLoader.Settings;
 using ObjLoader.Utilities;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Core
 {
     public static class CacheManager
     {

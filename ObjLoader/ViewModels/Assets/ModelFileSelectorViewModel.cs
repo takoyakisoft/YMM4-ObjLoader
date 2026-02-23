@@ -10,7 +10,7 @@ using ObjLoader.Parsers;
 using ObjLoader.Plugin;
 using YukkuriMovieMaker.Commons;
 using ObjLoader.Settings;
-using ObjLoader.Cache;
+using ObjLoader.Cache.Core;
 
 namespace ObjLoader.ViewModels.Assets
 {

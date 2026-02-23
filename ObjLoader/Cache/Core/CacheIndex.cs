@@ -2,7 +2,7 @@ using System.IO;
 using ObjLoader.Localization;
 using ObjLoader.Utilities;
 
-namespace ObjLoader.Cache
+namespace ObjLoader.Cache.Core
 {
     public class CacheIndex
     {

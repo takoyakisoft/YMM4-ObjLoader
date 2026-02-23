@@ -1,5 +1,4 @@
-﻿using ObjLoader.Cache;
-using ObjLoader.Localization;
+﻿using ObjLoader.Localization;
 using ObjLoader.Settings;
 using ObjLoader.ViewModels.Settings;
 using System.Collections.ObjectModel;
@@ -20,6 +19,7 @@ using ObjLoader.Services.Models;
 using ObjLoader.Plugin;
 using ObjLoader.Core.Models;
 using ObjLoader.Core.Timeline;
+using ObjLoader.Cache.Gpu;
 
 namespace ObjLoader.ViewModels.Splitter
 {
