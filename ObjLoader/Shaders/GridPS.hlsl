@@ -1,19 +1,29 @@
-cbuffer CBuf : register(b0)
+cbuffer CBPerFrame : register(b0)
+{
+    matrix ViewProj;
+    matrix InverseViewProj;
+    float4 CameraPos;
+    float4 LightPos;
+    float4 AmbientColor;
+    float4 LightColor;
+    float4 GridColor;
+    float4 GridAxisColor;
+    matrix LightViewProj0;
+    matrix LightViewProj1;
+    matrix LightViewProj2;
+    float4 LightTypeParams;
+    float4 ShadowParams;
+    float4 CascadeSplits;
+    float4 EnvironmentParam;
+    float4 PcssParams;
+}
+
+cbuffer CBPerObject : register(b1)
 {
     matrix WorldViewProj;
     matrix World;
-    float4 LightPos;
-    float4 BaseColor;
-    float4 AmbientColor;
-    float4 LightColor;
-    float4 CameraPos;
-    float LightEnabled;
-    float DiffuseIntensity;
-    float SpecularIntensity;
-    float Shininess;
-    float4 GridColor;
-    float4 GridAxisColor;
 }
+
 struct PS_IN
 {
     float4 pos : SV_POSITION;
@@ -38,7 +48,7 @@ float4 PS(PS_IN input) : SV_Target
     color = lerp(color, GridAxisColor, axisAlpha);
 
     float dist = length(CameraPos.xz - pos.xz);
-    if (Shininess > 0.5)
+    if (EnvironmentParam.w > 0.5)
     {
         color.a *= max(0.0, 1.0 - dist / 100.0);
     }

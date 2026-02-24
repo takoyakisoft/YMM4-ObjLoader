@@ -13,12 +13,15 @@ using MapFlags = Vortice.Direct3D11.MapFlags;
 
 namespace ObjLoader.Rendering.Renderers
 {
-    internal class ShadowRenderer
+    internal class ShadowRenderer : IDisposable
     {
         private readonly IGraphicsDevicesAndContext _devices;
         private readonly D3DResources _resources;
+        private bool _isDisposed;
 
-        private readonly ID3D11Buffer[] _cbArray = new ID3D11Buffer[1];
+        private ConstantBuffer<CBPerObject>? _cbPerObject;
+        private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
+        
         private readonly ID3D11Buffer[] _vbArray = new ID3D11Buffer[1];
         private readonly int[] _strideArray = new int[1];
         private readonly int[] _offsetArray = new int[] { 0 };
@@ -29,6 +32,7 @@ namespace ObjLoader.Rendering.Renderers
         {
             _devices = devices;
             _resources = resources;
+            _cbPerObject = new ConstantBuffer<CBPerObject>(_devices.D3D.Device);
         }
 
         public void Render(
@@ -38,7 +42,7 @@ namespace ObjLoader.Rendering.Renderers
             Dictionary<string, LayerState> layerStates)
         {
             if (_resources.ShadowMapDSVs == null || _resources.ShadowMapDSVs.Length == 0) return;
-            if (_resources.ConstantBuffer == null) return;
+            if (_cbPerObject == null) return;
 
             var context = _devices.D3D.Device.ImmediateContext;
 
@@ -53,9 +57,9 @@ namespace ObjLoader.Rendering.Renderers
             context.VSSetShader(_resources.VertexShader);
             context.PSSetShader(null);
 
-            if (_resources.ConstantBuffer != null)
+            if (_cbPerObject != null)
             {
-                _cbArray[0] = _resources.ConstantBuffer;
+                _cbPerObjectArray[0] = _cbPerObject.Buffer;
             }
 
             int cascadeCount = Math.Min(D3DResources.CascadeCount, _resources.ShadowMapDSVs.Length);
@@ -100,21 +104,15 @@ namespace ObjLoader.Rendering.Renderers
                     context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
                     context.IASetIndexBuffer(resource.IndexBuffer, Format.R32_UInt, 0);
 
-                    ConstantBufferData cbData = new ConstantBufferData
+                    CBPerObject cbShadow = new CBPerObject
                     {
                         WorldViewProj = Matrix4x4.Transpose(wvp),
                         World = Matrix4x4.Transpose(world)
                     };
 
-                    MappedSubresource mapped;
-                    context.Map(_resources.ConstantBuffer, 0, MapMode.WriteDiscard, MapFlags.None, out mapped);
-                    unsafe
-                    {
-                        Unsafe.Copy(mapped.DataPointer.ToPointer(), ref cbData);
-                    }
-                    context.Unmap(_resources.ConstantBuffer, 0);
-
-                    context.VSSetConstantBuffers(0, _cbArray);
+                    _cbPerObject!.Update(context, ref cbShadow);
+                    _cbPerObjectArray[0] = _cbPerObject.Buffer;
+                    context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
 
                     for (int p = 0; p < resource.Parts.Length; p++)
                     {
@@ -132,6 +130,14 @@ namespace ObjLoader.Rendering.Renderers
             context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
 
             context.Flush();
+        }
+
+        public void Dispose()
+        {
+            if (_isDisposed) return;
+            _isDisposed = true;
+
+            _cbPerObject?.Dispose();
         }
     }
 }

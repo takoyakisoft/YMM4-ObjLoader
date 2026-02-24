@@ -27,7 +27,6 @@ namespace ObjLoader.Rendering.Core
         public ID3D11PixelShader GridPixelShader { get; }
         public ID3D11InputLayout InputLayout { get; }
         public ID3D11InputLayout GridInputLayout { get; }
-        public ID3D11Buffer ConstantBuffer { get; }
         public ID3D11DepthStencilState DepthStencilState { get; }
         public ID3D11DepthStencilState DepthStencilStateNoWrite { get; }
         public ID3D11SamplerState SamplerState { get; }
@@ -113,9 +112,6 @@ namespace ObjLoader.Rendering.Core
             GridInputLayout = CreateGridInputLayout(device, gridVsByte);
             _disposer.Collect(GridInputLayout);
 
-            ConstantBuffer = CreateConstantBuffer(device);
-            _disposer.Collect(ConstantBuffer);
-
             CullNoneRasterizerState = CreateCullNoneRasterizerState(device);
             _disposer.Collect(CullNoneRasterizerState);
 
@@ -172,16 +168,6 @@ namespace ObjLoader.Rendering.Core
                 new InputElementDescription("POSITION", 0, Format.R32G32B32_Float, 0, 0, InputClassification.PerVertexData, 0)
             };
             return device.CreateInputLayout(gridElements, gridVsByte);
-        }
-
-        private static ID3D11Buffer CreateConstantBuffer(ID3D11Device device)
-        {
-            var cbDesc = new BufferDescription(
-                (int)((Marshal.SizeOf<ConstantBufferData>() + 15) / 16) * 16,
-                BindFlags.ConstantBuffer,
-                ResourceUsage.Dynamic,
-                CpuAccessFlags.Write);
-            return device.CreateBuffer(cbDesc);
         }
 
         private static ID3D11RasterizerState CreateCullNoneRasterizerState(ID3D11Device device)

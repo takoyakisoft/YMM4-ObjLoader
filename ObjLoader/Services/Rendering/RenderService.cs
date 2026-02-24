@@ -40,7 +40,14 @@ namespace ObjLoader.Services.Rendering
 
         private readonly ID3D11ShaderResourceView[] _nullSrv = new ID3D11ShaderResourceView[1];
         private readonly ID3D11ShaderResourceView[] _nullSrv4 = new ID3D11ShaderResourceView[4];
-        private readonly ID3D11Buffer[] _cbArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbPerFrameArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbPerMaterialArray = new ID3D11Buffer[1];
+        
+        private ConstantBuffer<CBPerFrame>? _cbPerFrame;
+        private ConstantBuffer<CBPerObject>? _cbPerObject;
+        private ConstantBuffer<CBPerMaterial>? _cbPerMaterial;
+
         private readonly ID3D11ShaderResourceView[] _texArray = new ID3D11ShaderResourceView[1];
         private readonly ID3D11SamplerState[] _samplerArray = new ID3D11SamplerState[1];
         private readonly ID3D11ShaderResourceView[] _shadowSrvArray = new ID3D11ShaderResourceView[1];
@@ -113,7 +120,14 @@ namespace ObjLoader.Services.Rendering
 
             ResourceTracker.Instance.Register(TrackingKey("GridVertexBuffer"), "ID3D11Buffer:Grid", _gridVertexBuffer, gridBufferSize);
 
-            _cbArray[0] = _d3dResources.ConstantBuffer;
+            _cbPerFrame = new ConstantBuffer<CBPerFrame>(_device);
+            _cbPerObject = new ConstantBuffer<CBPerObject>(_device);
+            _cbPerMaterial = new ConstantBuffer<CBPerMaterial>(_device);
+
+            _cbPerFrameArray[0] = _cbPerFrame.Buffer;
+            _cbPerObjectArray[0] = _cbPerObject.Buffer;
+            _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
+
             _samplerArray[0] = _d3dResources.SamplerState;
             _shadowSamplerArray[0] = _d3dResources.ShadowSampler;
             _gridVbArray[0] = _gridVertexBuffer;
@@ -311,7 +325,10 @@ namespace ObjLoader.Services.Rendering
 
             var settings = PluginSettings.Instance;
 
-            if (_cbArray[0] == null) _cbArray[0] = _d3dResources.ConstantBuffer;
+            if (_cbPerFrameArray[0] == null && _cbPerFrame != null) _cbPerFrameArray[0] = _cbPerFrame.Buffer;
+            if (_cbPerObjectArray[0] == null && _cbPerObject != null) _cbPerObjectArray[0] = _cbPerObject.Buffer;
+            if (_cbPerMaterialArray[0] == null && _cbPerMaterial != null) _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
+
             if (_samplerArray[0] == null) _samplerArray[0] = _d3dResources.SamplerState;
             if (_shadowSamplerArray[0] == null) _shadowSamplerArray[0] = _d3dResources.ShadowSampler;
 
@@ -346,9 +363,9 @@ namespace ObjLoader.Services.Rendering
 
             var dynamicTextures = _dynamicTextureManager.Textures;
 
-            RenderOpaqueParts(layers, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, renderShadowMap, dynamicTextures);
+            RenderOpaqueParts(layers, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, renderShadowMap, dynamicTextures, view, proj, camPos, false);
 
-            RenderTransparentParts(layers, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, isWireframe, dynamicTextures);
+            RenderTransparentParts(layers, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, isWireframe, dynamicTextures, view, proj, camPos, false);
 
             RenderGridIfVisible(isGridVisible, isInfiniteGrid, gridScale, view, proj, camPos, gridColor, axisColor);
 
@@ -424,7 +441,7 @@ namespace ObjLoader.Services.Rendering
             bool renderShadowMap = false;
             Matrix4x4 lightViewProj = Matrix4x4.Identity;
 
-            if (!enableShadow || !settings.ShadowMappingEnabled) return (false, lightViewProj);
+            if (!enableShadow || !settings.ShadowMappingEnabled || _context == null) return (false, lightViewProj);
 
             bool useCascaded = settings.CascadedShadowsEnabled;
             if (settings.ShadowResolution != _d3dResources!.CurrentShadowMapSize || _d3dResources.IsCascaded != useCascaded)
@@ -513,15 +530,21 @@ namespace ObjLoader.Services.Rendering
                 int stride = Unsafe.SizeOf<ObjVertex>();
                 _vbArray[0] = layer.OverrideVB ?? modelResource.VertexBuffer;
                 _strideArray[0] = stride;
-                _context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
+                _context!.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
                 _context.IASetIndexBuffer(modelResource.IndexBuffer, Format.R32_UInt, 0);
 
-                ConstantBufferData cbShadow = new ConstantBufferData
+                CBPerObject cbShadow = new CBPerObject
                 {
                     WorldViewProj = Matrix4x4.Transpose(wvpShadow),
                     World = Matrix4x4.Transpose(world)
                 };
-                UpdateConstantBuffer(ref cbShadow);
+
+                if (_context != null && _cbPerObject != null)
+                {
+                    _cbPerObject.Update(_context, ref cbShadow);
+                    _cbPerObjectArray[0] = _cbPerObject.Buffer;
+                    _context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
+                }
 
                 for (int p = 0; p < modelResource.Parts.Length; p++)
                 {
@@ -529,12 +552,12 @@ namespace ObjLoader.Services.Rendering
                     var part = modelResource.Parts[p];
                     if (part.BaseColor.W >= 0.99f)
                     {
-                        _context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
+                        _context!.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
                     }
                 }
             }
 
-            _context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+            _context!.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
             _context.Flush();
 
             return (renderShadowMap, lightViewProj);
@@ -616,7 +639,11 @@ namespace ObjLoader.Services.Rendering
             Matrix4x4 lightViewProj,
             bool enableShadow,
             bool renderShadowMap,
-            IReadOnlyDictionary<string, ID3D11ShaderResourceView> dynamicTextures)
+            IReadOnlyDictionary<string, ID3D11ShaderResourceView> dynamicTextures,
+            Matrix4x4 view,
+            Matrix4x4 proj,
+            System.Numerics.Vector3 camPos,
+            bool bindEnvironment)
         {
             _context!.VSSetShader(_d3dResources!.VertexShader);
             _context.PSSetShader(_d3dResources.PixelShader);
@@ -649,7 +676,7 @@ namespace ObjLoader.Services.Rendering
                     _context.IASetIndexBuffer(modelResource.IndexBuffer, Format.R32_UInt, 0);
                     lastLayerIndex = layerIndex;
                 }
-                DrawPart(layer, modelResource, partIndex, _cachedLayerWorlds![layerIndex], _cachedLayerWvps![layerIndex], layer.WorldId, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, dynamicTextures);
+                DrawPart(layer, modelResource, partIndex, _cachedLayerWorlds![layerIndex], _cachedLayerWvps![layerIndex], layer.WorldId, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, dynamicTextures, view, proj, camPos, bindEnvironment);
             }
         }
 
@@ -661,7 +688,11 @@ namespace ObjLoader.Services.Rendering
             Matrix4x4 lightViewProj,
             bool enableShadow,
             bool isWireframe,
-            IReadOnlyDictionary<string, ID3D11ShaderResourceView> dynamicTextures)
+            IReadOnlyDictionary<string, ID3D11ShaderResourceView> dynamicTextures,
+            Matrix4x4 view,
+            Matrix4x4 proj,
+            System.Numerics.Vector3 camPos,
+            bool bindEnvironment)
         {
             if (_transparentParts.Count == 0) return;
 
@@ -690,7 +721,7 @@ namespace ObjLoader.Services.Rendering
                     _context.IASetIndexBuffer(resource.IndexBuffer, Format.R32_UInt, 0);
                     lastLayerIndex = tp.LayerIndex;
                 }
-                DrawPart(layer, resource, tp.PartIndex, _cachedLayerWorlds![tp.LayerIndex], _cachedLayerWvps![tp.LayerIndex], layer.WorldId, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, dynamicTextures);
+                DrawPart(layer, resource, tp.PartIndex, _cachedLayerWorlds![tp.LayerIndex], _cachedLayerWvps![tp.LayerIndex], layer.WorldId, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, dynamicTextures, view, proj, camPos, bindEnvironment);
             }
             _context.OMSetDepthStencilState(_d3dResources.DepthStencilState);
             if (!isWireframe)
@@ -726,16 +757,24 @@ namespace ObjLoader.Services.Rendering
                 gridWorld = Matrix4x4.CreateScale(finiteScale);
             }
 
-            ConstantBufferData gridCb = new ConstantBufferData
+            CBPerFrame cbFrame = new CBPerFrame
             {
-                WorldViewProj = Matrix4x4.Transpose(gridWorld * view * proj),
-                World = Matrix4x4.Transpose(gridWorld),
+                ViewProj = Matrix4x4.Transpose(view * proj),
                 CameraPos = new System.Numerics.Vector4(camPos, 1),
                 GridColor = gridColor,
                 GridAxisColor = axisColor,
-                Shininess = isInfiniteGrid ? 1.0f : 0.0f
+                EnvironmentParam = new System.Numerics.Vector4(0, 0, 0, isInfiniteGrid ? 1.0f : 0.0f) // Borrowed shininess flag to w component
             };
-            UpdateConstantBuffer(ref gridCb);
+            
+            CBPerObject cbObject = new CBPerObject
+            {
+                WorldViewProj = Matrix4x4.Transpose(gridWorld * view * proj),
+                World = Matrix4x4.Transpose(gridWorld)
+            };
+            
+            CBPerMaterial cbMaterial = default;
+
+            UpdateConstantBuffers(ref cbFrame, ref cbObject, ref cbMaterial);
             _context.Draw(6, 0);
 
             _context.OMSetBlendState(_d3dResources.BlendState, new Color4(0, 0, 0, 0), -1);
@@ -782,7 +821,7 @@ namespace ObjLoader.Services.Rendering
             _context.VSSetShaderResources(0, _nullSrv4);
         }
 
-        private void DrawPart(LayerRenderData layer, GpuResourceCacheItem resource, int partIndex, Matrix4x4 world, Matrix4x4 wvp, int wId, System.Numerics.Vector4 gridColor, System.Numerics.Vector4 axisColor, bool isInteracting, Matrix4x4 lightViewProj, bool enableShadow, IReadOnlyDictionary<string, ID3D11ShaderResourceView> dynamicTextures)
+        private void DrawPart(LayerRenderData layer, GpuResourceCacheItem resource, int partIndex, Matrix4x4 world, Matrix4x4 wvp, int wId, System.Numerics.Vector4 gridColor, System.Numerics.Vector4 axisColor, bool isInteracting, Matrix4x4 lightViewProj, bool enableShadow, IReadOnlyDictionary<string, ID3D11ShaderResourceView> dynamicTextures, Matrix4x4 view, Matrix4x4 proj, System.Numerics.Vector3 camPos, bool bindEnvironment)
         {
             if (_context == null || _d3dResources == null) return;
 
@@ -817,21 +856,39 @@ namespace ObjLoader.Services.Rendering
             float roughness = (float)(material?.Roughness ?? settings.GetRoughness(wId));
             float metallic = (float)(material?.Metallic ?? settings.GetMetallic(wId));
 
-            ConstantBufferData cbData = new ConstantBufferData
+            CBPerFrame cbFrame = new CBPerFrame
             {
-                WorldViewProj = Matrix4x4.Transpose(wvp),
-                World = Matrix4x4.Transpose(world),
+                ViewProj = Matrix4x4.Transpose(view * proj),
+                InverseViewProj = Matrix4x4.Transpose(Matrix4x4.Identity),
                 LightPos = new System.Numerics.Vector4(finalLightPos, 1.0f),
-                BaseColor = material != null ? ToVec4(material.BaseColor) : part.BaseColor,
                 AmbientColor = ToVec4(settings.GetAmbientColor(wId)),
                 LightColor = ToVec4(settings.GetLightColor(wId)),
-                CameraPos = new System.Numerics.Vector4(0, 0, 0, 1),
+                CameraPos = new System.Numerics.Vector4((float)camPos.X, (float)camPos.Y, (float)camPos.Z, 1),
+                GridColor = gridColor,
+                GridAxisColor = axisColor,
+                LightViewProj0 = Matrix4x4.Transpose(lightViewProj),
+                LightViewProj1 = Matrix4x4.Identity,
+                LightViewProj2 = Matrix4x4.Identity,
+                LightTypeParams = new System.Numerics.Vector4(layer.LightType, 0, 0, 0),
+                ShadowParams = new System.Numerics.Vector4((enableShadow && settings.ShadowMappingEnabled) ? 1 : 0, (float)settings.ShadowBias, (float)settings.ShadowStrength, settings.ShadowResolution),
+                CascadeSplits = new System.Numerics.Vector4(float.MaxValue, float.MaxValue, float.MaxValue, float.MaxValue),
+                EnvironmentParam = new System.Numerics.Vector4(1, 0, 0, 0),
+                PcssParams = new System.Numerics.Vector4((float)settings.GetPcssLightSize(wId), RenderingConstants.PcssDefaultSearchFactor, (float)settings.GetPcssQuality(wId), (float)settings.GetPcssQuality(wId))
+            };
+
+            CBPerObject cbObject = new CBPerObject
+            {
+                WorldViewProj = Matrix4x4.Transpose(wvp),
+                World = Matrix4x4.Transpose(world)
+            };
+
+            CBPerMaterial cbMaterial = new CBPerMaterial
+            {
+                BaseColor = material != null ? ToVec4(material.BaseColor) : part.BaseColor,
                 LightEnabled = layer.LightEnabled ? 1.0f : 0.0f,
                 DiffuseIntensity = (float)settings.GetDiffuseIntensity(wId),
                 SpecularIntensity = (float)settings.GetSpecularIntensity(wId),
                 Shininess = (float)settings.GetShininess(wId),
-                GridColor = gridColor,
-                GridAxisColor = axisColor,
                 ToonParams = new System.Numerics.Vector4(settings.GetToonEnabled(wId) ? 1 : 0, settings.GetToonSteps(wId), (float)settings.GetToonSmoothness(wId), 0),
                 RimParams = new System.Numerics.Vector4(settings.GetRimEnabled(wId) ? 1 : 0, (float)settings.GetRimIntensity(wId), (float)settings.GetRimPower(wId), 0),
                 RimColor = ToVec4(settings.GetRimColor(wId)),
@@ -847,29 +904,36 @@ namespace ObjLoader.Services.Rendering
                 MonoParams = new System.Numerics.Vector4(settings.GetMonochromeEnabled(wId) ? 1 : 0, (float)settings.GetMonochromeMix(wId), 0, 0),
                 MonoColor = ToVec4(settings.GetMonochromeColor(wId)),
                 PosterizeParams = new System.Numerics.Vector4(settings.GetPosterizeEnabled(wId) ? 1 : 0, settings.GetPosterizeLevels(wId), 0, 0),
-                LightTypeParams = new System.Numerics.Vector4(layer.LightType, 0, 0, 0),
-                LightViewProj0 = Matrix4x4.Transpose(lightViewProj),
-                LightViewProj1 = Matrix4x4.Identity,
-                LightViewProj2 = Matrix4x4.Identity,
-                CascadeSplits = new System.Numerics.Vector4(float.MaxValue, float.MaxValue, float.MaxValue, float.MaxValue),
-                ShadowParams = new System.Numerics.Vector4((enableShadow && settings.ShadowMappingEnabled) ? 1 : 0, (float)settings.ShadowBias, (float)settings.ShadowStrength, settings.ShadowResolution),
-                PbrParams = new System.Numerics.Vector4(metallic, roughness, 1.0f, 0)
+                PbrParams = new System.Numerics.Vector4(metallic, roughness, 1.0f, 0),
+                IblParams = new System.Numerics.Vector4((float)settings.GetIBLIntensity(wId), 6.0f, 0, 0),
+                SsrParams = new System.Numerics.Vector4(settings.GetSSREnabled(wId) ? 1 : 0, (float)settings.GetSSRStep(wId), (float)settings.GetSSRMaxDist(wId), (float)settings.GetSSRMaxSteps(wId)),
+                SsrParams2 = new System.Numerics.Vector4((float)settings.GetSSRMaxSteps(wId), (float)settings.GetSSRThickness(wId), 0, 0)
             };
 
-            UpdateConstantBuffer(ref cbData);
+            UpdateConstantBuffers(ref cbFrame, ref cbObject, ref cbMaterial);
 
             _context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
         }
 
-        private void UpdateConstantBuffer(ref ConstantBufferData data)
+        private void UpdateConstantBuffers(ref CBPerFrame cbFrame, ref CBPerObject cbObject, ref CBPerMaterial cbMaterial)
         {
-            if (_context == null || _d3dResources == null || _d3dResources.ConstantBuffer == null) return;
-            MappedSubresource mapped;
-            _context.Map(_d3dResources.ConstantBuffer, 0, MapMode.WriteDiscard, D3D11MapFlags.None, out mapped);
-            unsafe { Unsafe.Copy(mapped.DataPointer.ToPointer(), ref data); }
-            _context.Unmap(_d3dResources.ConstantBuffer, 0);
-            _context.VSSetConstantBuffers(0, _cbArray);
-            _context.PSSetConstantBuffers(0, _cbArray);
+            if (_context == null || _cbPerFrame == null || _cbPerObject == null || _cbPerMaterial == null) return;
+            
+            _cbPerFrame.Update(_context, ref cbFrame);
+            _cbPerObject.Update(_context, ref cbObject);
+            _cbPerMaterial.Update(_context, ref cbMaterial);
+
+            _cbPerFrameArray[0] = _cbPerFrame.Buffer;
+            _cbPerObjectArray[0] = _cbPerObject.Buffer;
+            _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
+
+            _context.VSSetConstantBuffers(0, 1, _cbPerFrameArray);
+            _context.PSSetConstantBuffers(0, 1, _cbPerFrameArray);
+            
+            _context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
+            _context.PSSetConstantBuffers(1, 1, _cbPerObjectArray);
+            
+            _context.PSSetConstantBuffers(2, 1, _cbPerMaterialArray);
         }
 
         public void Dispose()
@@ -893,6 +957,10 @@ namespace ObjLoader.Services.Rendering
                 _stagingTexture?.Dispose(); _stagingTexture = null;
                 _resolveTexture?.Dispose(); _resolveTexture = null;
                 _gridVertexBuffer?.Dispose(); _gridVertexBuffer = null;
+
+                _cbPerFrame?.Dispose(); _cbPerFrame = null;
+                _cbPerObject?.Dispose(); _cbPerObject = null;
+                _cbPerMaterial?.Dispose(); _cbPerMaterial = null;
 
                 _cachedLayerWorlds = null;
                 _cachedLayerWvps = null;

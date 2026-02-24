@@ -3,22 +3,42 @@ using System.Runtime.InteropServices;
 
 namespace ObjLoader.Rendering.Core
 {
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct ConstantBufferData
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    internal struct CBPerFrame
+    {
+        public Matrix4x4 ViewProj;
+        public Matrix4x4 InverseViewProj;
+        public Vector4 CameraPos;
+        public Vector4 LightPos;
+        public Vector4 AmbientColor;
+        public Vector4 LightColor;
+        public Vector4 GridColor;
+        public Vector4 GridAxisColor;
+        public Matrix4x4 LightViewProj0;
+        public Matrix4x4 LightViewProj1;
+        public Matrix4x4 LightViewProj2;
+        public Vector4 LightTypeParams;
+        public Vector4 ShadowParams;
+        public Vector4 CascadeSplits;
+        public Vector4 EnvironmentParam;
+        public Vector4 PcssParams;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    internal struct CBPerObject
     {
         public Matrix4x4 WorldViewProj;
         public Matrix4x4 World;
-        public Vector4 LightPos;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    internal struct CBPerMaterial
+    {
         public Vector4 BaseColor;
-        public Vector4 AmbientColor;
-        public Vector4 LightColor;
-        public Vector4 CameraPos;
         public float LightEnabled;
         public float DiffuseIntensity;
         public float SpecularIntensity;
         public float Shininess;
-        public Vector4 GridColor;
-        public Vector4 GridAxisColor;
         public Vector4 ToonParams;
         public Vector4 RimParams;
         public Vector4 RimColor;
@@ -34,19 +54,9 @@ namespace ObjLoader.Rendering.Core
         public Vector4 MonoParams;
         public Vector4 MonoColor;
         public Vector4 PosterizeParams;
-        public Vector4 LightTypeParams;
-        public Matrix4x4 LightViewProj0;
-        public Matrix4x4 LightViewProj1;
-        public Matrix4x4 LightViewProj2;
-        public Vector4 ShadowParams;
-        public Vector4 CascadeSplits;
-        public Vector4 EnvironmentParam;
         public Vector4 PbrParams;
         public Vector4 IblParams;
         public Vector4 SsrParams;
-        public Matrix4x4 InverseViewProj;
-        public Matrix4x4 ViewProj;
-        public Vector4 PcssParams;
         public Vector4 SsrParams2;
     }
 }

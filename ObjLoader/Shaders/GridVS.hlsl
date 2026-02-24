@@ -1,19 +1,29 @@
-cbuffer CBuf : register(b0)
+cbuffer CBPerFrame : register(b0)
+{
+    matrix ViewProj;
+    matrix InverseViewProj;
+    float4 CameraPos;
+    float4 LightPos;
+    float4 AmbientColor;
+    float4 LightColor;
+    float4 GridColor;
+    float4 GridAxisColor;
+    matrix LightViewProj0;
+    matrix LightViewProj1;
+    matrix LightViewProj2;
+    float4 LightTypeParams;
+    float4 ShadowParams;
+    float4 CascadeSplits;
+    float4 EnvironmentParam;
+    float4 PcssParams;
+}
+
+cbuffer CBPerObject : register(b1)
 {
     matrix WorldViewProj;
     matrix World;
-    float4 LightPos;
-    float4 BaseColor;
-    float4 AmbientColor;
-    float4 LightColor;
-    float4 CameraPos;
-    float LightEnabled;
-    float DiffuseIntensity;
-    float SpecularIntensity;
-    float Shininess;
-    float4 GridColor;
-    float4 GridAxisColor;
 }
+
 struct VS_IN
 {
     float3 pos : POSITION;

@@ -19,16 +19,24 @@ using MapFlags = Vortice.Direct3D11.MapFlags;
 
 namespace ObjLoader.Rendering.Renderers
 {
-    internal class SceneRenderer
+    internal class SceneRenderer : IDisposable
     {
         private const int MaxHierarchyDepth = 100;
+        private bool _isDisposed;
 
         private readonly IGraphicsDevicesAndContext _devices;
         private readonly D3DResources _resources;
         private readonly RenderTargetManager _renderTargets;
         private readonly CustomShaderManager _shaderManager;
 
-        private readonly ID3D11Buffer[] _cbArray = new ID3D11Buffer[1];
+        private ConstantBuffer<CBPerFrame>? _cbPerFrame;
+        private ConstantBuffer<CBPerObject>? _cbPerObject;
+        private ConstantBuffer<CBPerMaterial>? _cbPerMaterial;
+
+        private readonly ID3D11Buffer[] _cbPerFrameArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbPerMaterialArray = new ID3D11Buffer[1];
+
         private readonly ID3D11Buffer[] _vbArray = new ID3D11Buffer[1];
         private readonly int[] _strideArray = new int[1];
         private readonly int[] _offsetArray = new int[] { 0 };
@@ -49,6 +57,10 @@ namespace ObjLoader.Rendering.Renderers
             _resources = resources;
             _renderTargets = renderTargets;
             _shaderManager = shaderManager;
+
+            _cbPerFrame = new ConstantBuffer<CBPerFrame>(_devices.D3D.Device);
+            _cbPerObject = new ConstantBuffer<CBPerObject>(_devices.D3D.Device);
+            _cbPerMaterial = new ConstantBuffer<CBPerMaterial>(_devices.D3D.Device);
         }
 
         public void Render(
@@ -62,7 +74,7 @@ namespace ObjLoader.Rendering.Renderers
             bool shadowValid, int activeWorldId, bool updateEnvironmentMap,
             IReadOnlyDictionary<string, ID3D11ShaderResourceView>? dynamicTextureCache = null)
         {
-            if (_resources.ConstantBuffer == null || _renderTargets.RenderTargetView == null) return;
+            if (_renderTargets.RenderTargetView == null) return;
 
             var context = _devices.D3D.Device.ImmediateContext;
 
@@ -221,12 +233,9 @@ namespace ObjLoader.Rendering.Renderers
             context.RSSetViewport(0, 0, width, height);
             context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
 
-            if (_resources.ConstantBuffer != null)
-            {
-                _cbArray[0] = _resources.ConstantBuffer;
-            }
+            if (_cbPerFrame == null || _cbPerObject == null || _cbPerMaterial == null) return;
 
-            if (_resources.SamplerState != null)
+            context.RSSetState(rasterizerState ?? _resources.RasterizerState);
             {
                 _samplerArray[0] = _resources.SamplerState;
             }
@@ -299,6 +308,48 @@ namespace ObjLoader.Rendering.Renderers
 
                 Matrix4x4.Invert(viewProj, out var inverseViewProj);
 
+                CBPerFrame cbFrame = new CBPerFrame
+                {
+                    ViewProj = Matrix4x4.Transpose(viewProj),
+                    InverseViewProj = Matrix4x4.Transpose(inverseViewProj),
+                    CameraPos = camPos,
+                    LightPos = lightPos,
+                    AmbientColor = amb,
+                    LightColor = lCol,
+                    GridColor = new Vector4(0, 0, 0, 0),
+                    GridAxisColor = new Vector4(0, 0, 0, 0),
+                    LightViewProj0 = Matrix4x4.Transpose(lightViewProjs[0]),
+                    LightViewProj1 = Matrix4x4.Transpose(lightViewProjs[1]),
+                    LightViewProj2 = Matrix4x4.Transpose(lightViewProjs[2]),
+                    LightTypeParams = new Vector4((float)state.LightType, 0, 0, 0),
+                    ShadowParams = new Vector4(
+                        (shadowValid && state.WorldId == activeWorldId) ? 1.0f : 0.0f,
+                        (float)settings.ShadowBias,
+                        (float)settings.ShadowStrength,
+                        (float)settings.ShadowResolution),
+                    CascadeSplits = new Vector4(cascadeSplits[0], cascadeSplits[1], cascadeSplits[2], cascadeSplits[3]),
+                    EnvironmentParam = bindEnvironment ? new Vector4(1, 0, 0, 0) : new Vector4(0, 0, 0, 0),
+                    PcssParams = new Vector4((float)settings.GetPcssLightSize(state.WorldId), RenderingConstants.PcssDefaultSearchFactor, (float)settings.GetPcssQuality(state.WorldId), (float)settings.GetPcssQuality(state.WorldId))
+                };
+                
+                CBPerObject cbObject = new CBPerObject
+                {
+                    WorldViewProj = Matrix4x4.Transpose(wvp),
+                    World = Matrix4x4.Transpose(world)
+                };
+                
+                _cbPerFrame.Update(context, ref cbFrame);
+                _cbPerObject.Update(context, ref cbObject);
+                
+                _cbPerFrameArray[0] = _cbPerFrame.Buffer;
+                _cbPerObjectArray[0] = _cbPerObject.Buffer;
+                
+                context.VSSetConstantBuffers(0, 1, _cbPerFrameArray);
+                context.PSSetConstantBuffers(0, 1, _cbPerFrameArray);
+                
+                context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
+                context.PSSetConstantBuffers(1, 1, _cbPerObjectArray);
+
                 int stride = Unsafe.SizeOf<ObjVertex>();
                 _vbArray[0] = item.OverrideVB ?? resource.VertexBuffer;
                 _strideArray[0] = stride;
@@ -338,15 +389,9 @@ namespace ObjLoader.Rendering.Renderers
                     var uiColorVec = hasTexture ? Vector4.One : new Vector4(state.BaseColor.ScR, state.BaseColor.ScG, state.BaseColor.ScB, state.BaseColor.ScA);
                     var partColor = resolvedBaseColor * uiColorVec;
 
-                    ConstantBufferData cbData = new ConstantBufferData
+                    CBPerMaterial cbMaterial = new CBPerMaterial
                     {
-                        WorldViewProj = Matrix4x4.Transpose(wvp),
-                        World = Matrix4x4.Transpose(world),
-                        LightPos = lightPos,
                         BaseColor = partColor,
-                        AmbientColor = amb,
-                        LightColor = lCol,
-                        CameraPos = camPos,
                         LightEnabled = state.IsLightEnabled ? 1.0f : 0.0f,
                         DiffuseIntensity = (float)state.Diffuse,
                         SpecularIntensity = (float)settings.GetSpecularIntensity(wId),
@@ -367,47 +412,32 @@ namespace ObjLoader.Rendering.Renderers
                         MonoParams = new System.Numerics.Vector4(settings.GetMonochromeEnabled(wId) ? 1 : 0, (float)settings.GetMonochromeMix(wId), 0, 0),
                         MonoColor = RenderUtils.ToVec4(settings.GetMonochromeColor(wId)),
                         PosterizeParams = new System.Numerics.Vector4(settings.GetPosterizeEnabled(wId) ? 1 : 0, settings.GetPosterizeLevels(wId), 0, 0),
-                        LightTypeParams = new System.Numerics.Vector4((float)state.LightType, 0, 0, 0),
-
-                        LightViewProj0 = Matrix4x4.Transpose(lightViewProjs[0]),
-                        LightViewProj1 = Matrix4x4.Transpose(lightViewProjs[1]),
-                        LightViewProj2 = Matrix4x4.Transpose(lightViewProjs[2]),
-                        ShadowParams = new Vector4(
-                            (shadowValid && state.WorldId == activeWorldId) ? 1.0f : 0.0f,
-                            (float)settings.ShadowBias,
-                            (float)settings.ShadowStrength,
-                            (float)settings.ShadowResolution),
-                        CascadeSplits = new Vector4(cascadeSplits[0], cascadeSplits[1], cascadeSplits[2], cascadeSplits[3]),
-                        EnvironmentParam = bindEnvironment ? new Vector4(1, 0, 0, 0) : new Vector4(0, 0, 0, 0),
 
                         PbrParams = new Vector4(metallic, roughness, 1.0f, 0),
                         IblParams = new Vector4((float)settings.GetIBLIntensity(wId), 6.0f, 0, 0),
                         SsrParams = new Vector4(settings.GetSSREnabled(wId) ? 1 : 0, (float)settings.GetSSRStep(wId), (float)settings.GetSSRMaxDist(wId), (float)settings.GetSSRMaxSteps(wId)),
-                        ViewProj = Matrix4x4.Transpose(viewProj),
-                        InverseViewProj = Matrix4x4.Transpose(inverseViewProj),
-                        PcssParams = new Vector4((float)settings.GetPcssLightSize(wId), RenderingConstants.PcssDefaultSearchFactor, (float)settings.GetPcssQuality(wId), (float)settings.GetPcssQuality(wId)),
                         SsrParams2 = new Vector4((float)settings.GetSSRMaxSteps(wId), (float)settings.GetSSRThickness(wId), 0, 0)
                     };
 
-                    if (_resources.ConstantBuffer != null)
-                    {
-                        MappedSubresource mapped;
-                        context.Map(_resources.ConstantBuffer, 0, MapMode.WriteDiscard, MapFlags.None, out mapped);
-                        unsafe
-                        {
-                            Unsafe.Copy(mapped.DataPointer.ToPointer(), ref cbData);
-                        }
-                        context.Unmap(_resources.ConstantBuffer, 0);
-
-                        context.VSSetConstantBuffers(0, _cbArray);
-                        context.PSSetConstantBuffers(0, _cbArray);
-                    }
+                    _cbPerMaterial.Update(context, ref cbMaterial);
+                    _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
+                    context.PSSetConstantBuffers(2, 1, _cbPerMaterialArray);
 
                     context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
                 }
             }
 
             context.PSSetShaderResources(0, 1, _nullSrv1);
+        }
+
+        public void Dispose()
+        {
+            if (_isDisposed) return;
+            _isDisposed = true;
+
+            _cbPerFrame?.Dispose();
+            _cbPerObject?.Dispose();
+            _cbPerMaterial?.Dispose();
         }
     }
 }

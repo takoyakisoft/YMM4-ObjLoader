@@ -1,46 +1,27 @@
-cbuffer CBuf : register(b0)
+cbuffer CBPerFrame : register(b0)
 {
-    matrix WorldViewProj;
-    matrix World;
+    matrix ViewProj;
+    matrix InverseViewProj;
+    float4 CameraPos;
     float4 LightPos;
-    float4 BaseColor;
     float4 AmbientColor;
     float4 LightColor;
-    float4 CameraPos;
-    float LightEnabled;
-    float DiffuseIntensity;
-    float SpecularIntensity;
-    float Shininess;
     float4 GridColor;
     float4 GridAxisColor;
-    float4 ToonParams;
-    float4 RimParams;
-    float4 RimColor;
-    float4 OutlineParams;
-    float4 OutlineColor;
-    float4 FogParams;
-    float4 FogColor;
-    float4 ColorCorrParams;
-    float4 VignetteParams;
-    float4 VignetteColor;
-    float4 ScanlineParams;
-    float4 ChromAbParams;
-    float4 MonoParams;
-    float4 MonoColor;
-    float4 PosterizeParams;
-    float4 LightTypeParams;
     matrix LightViewProj0;
     matrix LightViewProj1;
     matrix LightViewProj2;
+    float4 LightTypeParams;
     float4 ShadowParams;
     float4 CascadeSplits;
     float4 EnvironmentParam;
-    float4 PbrParams;
-    float4 IblParams;
-    float4 SsrParams;
-    matrix InverseViewProj;
-    matrix ViewProj;
     float4 PcssParams;
+}
+
+cbuffer CBPerObject : register(b1)
+{
+    matrix WorldViewProj;
+    matrix World;
 }
 
 struct VS_IN
