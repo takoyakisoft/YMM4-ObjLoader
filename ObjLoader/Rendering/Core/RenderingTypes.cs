@@ -10,7 +10,7 @@ namespace ObjLoader.Rendering.Core
         public double X, Y, Z, Scale, Rx, Ry, Rz, Cx, Cy, Cz, Fov, LightX, LightY, LightZ, Diffuse, Specular, Shininess;
         public bool IsLightEnabled;
         public LightType LightType;
-        public string FilePath, ShaderFilePath;
+        public string FilePath, ShaderFilePath, CacheKey;
         public Color BaseColor, Ambient, Light;
         public ProjectionType Projection;
         public CoordinateSystem CoordSystem;

@@ -54,7 +54,7 @@ namespace ObjLoader.Rendering.Managers
 
         public void ProcessSkinning(string guid, string filePath, BoneAnimator? animator, double currentTime)
         {
-            if (animator == null || !Path.GetExtension(filePath).Equals(".pmx", StringComparison.OrdinalIgnoreCase))
+            if (animator == null || !filePath.EndsWith(".pmx", StringComparison.OrdinalIgnoreCase))
             {
                 RemoveSkinningState(guid);
                 return;

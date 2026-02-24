@@ -74,6 +74,8 @@ namespace ObjLoader.Rendering.Core
         private readonly Dictionary<string, LayerState> _mutableStatesForScene = new();
         private readonly Matrix4x4[] _lightViewProjs = new Matrix4x4[D3DResources.CascadeCount];
         private readonly float[] _cascadeSplits = new float[4];
+        private readonly float[] _splitDistances = new float[4];
+        private readonly HashSet<string> _usedTexturePaths = new HashSet<string>();
         private readonly Vector3[] _frustumCorners = new Vector3[8];
         private double _currentTime;
         private bool _hasBoneAnimation;
@@ -280,7 +282,7 @@ namespace ObjLoader.Rendering.Core
             var device = _devices.D3D.Device;
             if (device == null) return;
 
-            var usedPaths = new HashSet<string>();
+            _usedTexturePaths.Clear();
 
             foreach (var layer in layers)
             {
@@ -290,12 +292,12 @@ namespace ObjLoader.Rendering.Core
                     {
                         if (!string.IsNullOrEmpty(pm.TexturePath))
                         {
-                            usedPaths.Add(pm.TexturePath!);
+                            _usedTexturePaths.Add(pm.TexturePath!);
                         }
                     }
                 }
             }
-            _dynamicTextureManager.Prepare(usedPaths, device);
+            _dynamicTextureManager.Prepare(_usedTexturePaths, device);
         }
 
         private (int activeWorldId, ImmutableDictionary<string, LayerState> newLayerStates, bool layersChanged) BuildLayerStates(long frame, long length, int fps, PluginSettings settings)
@@ -327,10 +329,25 @@ namespace ObjLoader.Rendering.Core
                 int worldId = (int)layer.WorldId.GetValue(frame, length, fps);
 
                 var visibleParts = layer.VisibleParts;
-                HashSet<int>? copiedVisibleParts = visibleParts != null ? new HashSet<int>(visibleParts) : null;
-
                 previousStates.TryGetValue(layer.Guid, out var oldState);
+                
+                HashSet<int>? copiedVisibleParts = null;
+                if (visibleParts != null)
+                {
+                    if (oldState.VisibleParts != null && oldState.VisibleParts.SetEquals(visibleParts))
+                    {
+                        copiedVisibleParts = oldState.VisibleParts;
+                    }
+                    else
+                    {
+                        copiedVisibleParts = new HashSet<int>(visibleParts);
+                    }
+                }
+
                 var partMaterials = CreatePartMaterials(layer, oldState.PartMaterials);
+
+                string filePath = layer.FilePath ?? string.Empty;
+                string cacheKey = filePath.Length == 0 ? string.Empty : (string.Equals(oldState.FilePath, filePath, StringComparison.Ordinal) ? oldState.CacheKey : GetCacheKey(filePath));
 
                 var layerState = new LayerState
                 {
@@ -350,7 +367,8 @@ namespace ObjLoader.Rendering.Core
                     LightZ = lz,
                     IsLightEnabled = layer.IsLightEnabled,
                     LightType = layer.LightType,
-                    FilePath = layer.FilePath ?? string.Empty,
+                    FilePath = filePath,
+                    CacheKey = cacheKey,
                     ShaderFilePath = _parameter.ShaderFilePath?.Trim('"') ?? string.Empty,
                     BaseColor = layer.BaseColor,
                     WorldId = worldId,
@@ -483,8 +501,7 @@ namespace ObjLoader.Rendering.Core
                 if (effectiveVisibility && !string.IsNullOrEmpty(layerState.FilePath))
                 {
                     GpuResourceCacheItem? resource = null;
-                    string cacheKey = GetCacheKey(layerState.FilePath);
-                    if (GpuResourceCache.Instance.TryGetValue(cacheKey, out var cached))
+                    if (GpuResourceCache.Instance.TryGetValue(layerState.CacheKey, out var cached))
                     {
                         if (cached != null && cached.Device == _devices.D3D.Device)
                         {
@@ -613,15 +630,19 @@ namespace ObjLoader.Rendering.Core
             float nearPlane = RenderingConstants.ShadowNearPlane;
             float farPlane = RenderingConstants.DefaultFarPlane;
 
-            float[] splitDistances = { nearPlane, nearPlane + (farPlane - nearPlane) * 0.05f, nearPlane + (farPlane - nearPlane) * 0.2f, farPlane };
-            _cascadeSplits[0] = splitDistances[1];
-            _cascadeSplits[1] = splitDistances[2];
-            _cascadeSplits[2] = splitDistances[3];
+            _splitDistances[0] = nearPlane;
+            _splitDistances[1] = nearPlane + (farPlane - nearPlane) * 0.05f;
+            _splitDistances[2] = nearPlane + (farPlane - nearPlane) * 0.2f;
+            _splitDistances[3] = farPlane;
+
+            _cascadeSplits[0] = _splitDistances[1];
+            _cascadeSplits[1] = _splitDistances[2];
+            _cascadeSplits[2] = _splitDistances[3];
 
             for (int i = 0; i < D3DResources.CascadeCount; i++)
             {
-                float sn = splitDistances[i];
-                float sf = splitDistances[i + 1];
+                float sn = _splitDistances[i];
+                float sf = _splitDistances[i + 1];
                 var projMatrix = Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, sn, sf);
                 var invViewProj = Matrix4x4.Invert(viewMatrix * projMatrix, out var inv) ? inv : Matrix4x4.Identity;
 
