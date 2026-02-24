@@ -7,6 +7,7 @@ using ObjLoader.ViewModels.Settings;
 using Vortice.DXGI;
 using YukkuriMovieMaker.Plugin;
 using ObjLoader.Cache.Core;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Settings
 {
@@ -152,7 +153,7 @@ namespace ObjLoader.Settings
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: Sandbox setup failed: {ex.Message}");
+                Logger<ModelSettings>.Instance.Error("Sandbox setup failed", ex);
             }
 
             try
@@ -161,7 +162,7 @@ namespace ObjLoader.Settings
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: GPU info retrieval failed: {ex.Message}");
+                Logger<ModelSettings>.Instance.Error("GPU info retrieval failed", ex);
             }
 
             try
@@ -179,7 +180,7 @@ namespace ObjLoader.Settings
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ModelSettings.Initialize: Auditor setup failed: {ex.Message}");
+                Logger<ModelSettings>.Instance.Error("Auditor setup failed", ex);
             }
         }
 
@@ -298,7 +299,7 @@ namespace ObjLoader.Settings
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"ModelSettings.GetCacheIndex: Failed to load index from '{path}': {ex.Message}");
+                    Logger<ModelSettings>.Instance.Error($"Failed to load index from '{path}'", ex);
                 }
             }
             return aggregatedIndex;
@@ -364,7 +365,7 @@ namespace ObjLoader.Settings
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"ModelSettings.SaveCacheIndex: Failed to save partial index to '{indexFile}': {ex.Message}");
+                    Logger<ModelSettings>.Instance.Error($"Failed to save partial index to '{indexFile}'", ex);
                 }
             }
             CacheIndexPaths = newPaths;

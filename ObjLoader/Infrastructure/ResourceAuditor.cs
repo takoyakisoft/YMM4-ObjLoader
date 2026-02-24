@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Infrastructure
 {
@@ -120,20 +121,20 @@ namespace ObjLoader.Infrastructure
 
                 foreach (var leak in leaked)
                 {
-                    Debug.WriteLine(
-                        $"[ResourceAuditor] Potential leak: Key={leak.Key}, Type={leak.ResourceType}, Age={leak.Age.TotalMinutes:F1}min, Size={leak.EstimatedSizeBytes}B");
+                    Logger<ResourceAuditor>.Instance.Warning(
+                        $"Potential leak: Key={leak.Key}, Type={leak.ResourceType}, Age={leak.Age.TotalMinutes:F1}min, Size={leak.EstimatedSizeBytes}B");
                 }
 
                 foreach (var orphan in orphaned)
                 {
-                    Debug.WriteLine(
-                        $"[ResourceAuditor] Orphaned: Key={orphan.Key}, Type={orphan.ResourceType}, CreatedAt={orphan.CreatedAt:O}");
+                    Logger<ResourceAuditor>.Instance.Warning(
+                        $"Orphaned: Key={orphan.Key}, Type={orphan.ResourceType}, CreatedAt={orphan.CreatedAt:O}");
                 }
 
                 if (leaked.Count > 0 || orphaned.Count > 0)
                 {
-                    Debug.WriteLine(
-                        $"[ResourceAuditor] Summary: Active={report.ActiveResources}, Leaked={leaked.Count}, Orphaned={orphaned.Count}, TotalAlloc={report.TotalAllocations}, TotalDispose={report.TotalDisposals}, EstBytes={report.EstimatedActiveBytes}");
+                    Logger<ResourceAuditor>.Instance.Warning(
+                        $"Summary: Active={report.ActiveResources}, Leaked={leaked.Count}, Orphaned={orphaned.Count}, TotalAlloc={report.TotalAllocations}, TotalDispose={report.TotalDisposals}, EstBytes={report.EstimatedActiveBytes}");
                 }
 
                 RaiseAuditCompleted(report);
@@ -142,7 +143,7 @@ namespace ObjLoader.Infrastructure
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ResourceAuditor] RunAudit failed: {ex.Message}");
+                Logger<ResourceAuditor>.Instance.Error("RunAudit failed", ex);
                 return AuditReport.Empty;
             }
         }
@@ -174,7 +175,7 @@ namespace ObjLoader.Infrastructure
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ResourceAuditor] Audit tick failed: {ex.Message}");
+                Logger<ResourceAuditor>.Instance.Error("Audit tick failed", ex);
             }
         }
 

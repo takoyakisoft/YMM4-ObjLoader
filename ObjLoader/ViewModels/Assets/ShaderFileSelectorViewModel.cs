@@ -5,6 +5,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using ObjLoader.Localization;
 using YukkuriMovieMaker.Commons;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.ViewModels.Assets
 {
@@ -219,7 +220,7 @@ namespace ObjLoader.ViewModels.Assets
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Validation auto-trigger failed: {ex}");
+                Logger<ShaderFileSelectorViewModel>.Instance.Error("Validation auto-trigger failed", ex);
             }
         }
     }

@@ -15,6 +15,7 @@ using System.Windows;
 using System.Windows.Media.Imaging;
 using Vortice.Direct3D11;
 using Vector3 = System.Numerics.Vector3;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Services.Models
 {
@@ -48,7 +49,7 @@ namespace ObjLoader.Services.Models
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ModelManagementService: Failed to check file size: {ex.Message}");
+                Logger<ModelManagementService>.Instance.Error("Failed to check file size", ex);
                 return result;
             }
 
@@ -89,7 +90,7 @@ namespace ObjLoader.Services.Models
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"ModelManagementService: Failed to load texture {parts[i].TexturePath}: {ex.Message}");
+                        Logger<ModelManagementService>.Instance.Warning($"Failed to load texture {parts[i].TexturePath}", ex);
                     }
                 }
 
@@ -254,7 +255,7 @@ namespace ObjLoader.Services.Models
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ModelManagementService: Dispose failed: {ex.Message}");
+                Logger<ModelManagementService>.Instance.Error("Dispose failed", ex);
             }
         }
     }

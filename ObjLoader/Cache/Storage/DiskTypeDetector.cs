@@ -1,10 +1,13 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Cache.Storage
 {
     public static class DiskTypeDetector
     {
+        private static readonly Logger _logger = LoggerFactory.CreateLogger(nameof(DiskTypeDetector));
+
         private static readonly Dictionary<string, DiskType> _driveTypeCache = new Dictionary<string, DiskType>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _lock = new object();
 
@@ -42,7 +45,7 @@ namespace ObjLoader.Cache.Storage
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"DiskTypeDetector.GetDiskType: Detection failed for '{path}': {ex.Message}");
+                _logger.Error($"Detection failed for '{path}'", ex);
             }
 
             return DiskType.Unknown;
@@ -64,7 +67,7 @@ namespace ObjLoader.Cache.Storage
             if (hDevice == INVALID_HANDLE_VALUE)
             {
                 int lastError = Marshal.GetLastWin32Error();
-                System.Diagnostics.Debug.WriteLine($"DiskTypeDetector: CreateFile failed for '{volumePath}', error={lastError}");
+                _logger.Warning($"CreateFile failed for '{volumePath}', error={lastError}");
                 return DiskType.Unknown;
             }
 
@@ -100,19 +103,19 @@ namespace ObjLoader.Cache.Storage
                         if (!success)
                         {
                             int lastError = Marshal.GetLastWin32Error();
-                            System.Diagnostics.Debug.WriteLine($"DiskTypeDetector: DeviceIoControl failed for '{driveLetter}', error={lastError}");
+                            _logger.Warning($"DeviceIoControl failed for '{driveLetter}', error={lastError}");
                             return DiskType.Unknown;
                         }
 
                         if (bytesReturned < Marshal.SizeOf(typeof(DEVICE_SEEK_PENALTY_DESCRIPTOR)))
                         {
-                            System.Diagnostics.Debug.WriteLine($"DiskTypeDetector: DeviceIoControl returned insufficient data ({bytesReturned} bytes) for '{driveLetter}'");
+                            _logger.Warning($"DeviceIoControl returned insufficient data ({bytesReturned} bytes) for '{driveLetter}'");
                             return DiskType.Unknown;
                         }
 
                         var descriptor = Marshal.PtrToStructure<DEVICE_SEEK_PENALTY_DESCRIPTOR>(outPtr);
                         var type = descriptor.IncursSeekPenalty ? DiskType.Hdd : DiskType.Ssd;
-                        System.Diagnostics.Debug.WriteLine($"DiskTypeDetector: '{driveLetter}' detected as {type} (IncursSeekPenalty={descriptor.IncursSeekPenalty})");
+                        _logger.Debug($"'{driveLetter}' detected as {type} (IncursSeekPenalty={descriptor.IncursSeekPenalty})");
                         return type;
                     }
                     finally

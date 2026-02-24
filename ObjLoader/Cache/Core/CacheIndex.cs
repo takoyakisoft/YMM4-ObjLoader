@@ -1,6 +1,7 @@
 using System.IO;
 using ObjLoader.Localization;
 using ObjLoader.Utilities;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Cache.Core
 {
@@ -84,7 +85,7 @@ namespace ObjLoader.Cache.Core
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"CacheIndex.FromBinary: Deserialization failed: {ex.Message}");
+                Logger<CacheIndex>.Instance.Error($"Deserialization failed", ex);
                 UserNotification.ShowWarning(Texts.CacheIndexDeserializationFailed, Texts.ErrorTitle);
                 return new CacheIndex();
             }

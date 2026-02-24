@@ -3,6 +3,7 @@ using YukkuriMovieMaker.Commons;
 using ObjLoader.Localization;
 using ObjLoader.Utilities;
 using ObjLoader.Cache.Core;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.ViewModels.Settings
 {
@@ -89,7 +90,7 @@ namespace ObjLoader.ViewModels.Settings
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"CacheEntryViewModel.ConvertCommand: Conversion failed for '{OriginalPath}': {ex.Message}");
+                    Logger<CacheEntryViewModel>.Instance.Error($"Conversion failed for '{OriginalPath}'", ex);
                     UserNotification.ShowWarning(string.Format(Texts.CacheConvertFailed, ex.Message), Texts.ErrorTitle);
                 }
             });

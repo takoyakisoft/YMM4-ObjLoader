@@ -1,10 +1,13 @@
 ﻿using System.Collections.Concurrent;
 using System.Windows;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Utilities
 {
     internal static class UserNotification
     {
+        private static readonly Logger _logger = LoggerFactory.CreateLogger(nameof(UserNotification));
+
         private static readonly ConcurrentDictionary<string, DateTime> _lastShown = new();
         private static readonly TimeSpan _cooldown = TimeSpan.FromSeconds(10);
 
@@ -51,13 +54,13 @@ namespace ObjLoader.Utilities
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"UserNotification: Failed to show message box: {ex.Message}");
+                        _logger.Error("Failed to show message box", ex);
                     }
                 }));
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"UserNotification: Failed to dispatch message box: {ex.Message}");
+                _logger.Error("Failed to dispatch message box", ex);
             }
         }
 

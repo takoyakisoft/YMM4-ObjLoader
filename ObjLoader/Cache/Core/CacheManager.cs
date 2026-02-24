@@ -2,11 +2,14 @@ using System.IO;
 using ObjLoader.Localization;
 using ObjLoader.Settings;
 using ObjLoader.Utilities;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Cache.Core
 {
     public static class CacheManager
     {
+        private static readonly Logger _logger = LoggerFactory.CreateLogger(nameof(CacheManager));
+
         private const string CacheDirName = ".cache";
 
         public static void DeleteCache(string originalPath)
@@ -36,7 +39,7 @@ namespace ObjLoader.Cache.Core
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"CacheManager.DeleteCache: Failed to delete files for '{originalPath}': {ex.Message}");
+                    _logger.Error($"Failed to delete files for '{originalPath}'", ex);
                     UserNotification.ShowWarning(string.Format(Texts.CacheDeleteFailed, originalPath), Texts.ErrorTitle);
                 }
 
@@ -58,7 +61,7 @@ namespace ObjLoader.Cache.Core
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"CacheManager.DeleteCache: Failed to delete legacy file for '{originalPath}': {ex.Message}");
+                    _logger.Warning($"Failed to delete legacy file for '{originalPath}'", ex);
                 }
             }
         }
@@ -89,7 +92,7 @@ namespace ObjLoader.Cache.Core
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"CacheManager.CleanUpCache: Failed to clean entry '{kvp.Key}': {ex.Message}");
+                        _logger.Warning($"Failed to clean entry '{kvp.Key}'", ex);
                     }
                 }
 
@@ -160,7 +163,7 @@ namespace ObjLoader.Cache.Core
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"CacheManager.MoveCache: Failed to move '{oldKey}' -> '{newPath}': {ex.Message}");
+                    _logger.Error($"Failed to move '{oldKey}' -> '{newPath}'", ex);
 
                     try
                     {
@@ -175,7 +178,7 @@ namespace ObjLoader.Cache.Core
                     }
                     catch (Exception rollbackEx)
                     {
-                        System.Diagnostics.Debug.WriteLine($"CacheManager.MoveCache: Rollback failed: {rollbackEx.Message}");
+                        _logger.Error("Rollback failed", rollbackEx);
                         UserNotification.ShowWarning(string.Format(Texts.CacheMoveRollbackFailed, rollbackEx.Message), Texts.ErrorTitle);
                     }
 

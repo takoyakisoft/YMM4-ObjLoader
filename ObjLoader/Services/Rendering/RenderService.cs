@@ -15,6 +15,7 @@ using D3D11MapFlags = Vortice.Direct3D11.MapFlags;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 using ObjLoader.Core.Models;
 using ObjLoader.Cache.Gpu;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Services.Rendering
 {
@@ -268,11 +269,11 @@ namespace ObjLoader.Services.Rendering
                 }
                 catch (SharpGen.Runtime.SharpGenException ex) when (ex.HResult == unchecked((int)0x887A0005) || ex.HResult == unchecked((int)0x887A0006))
                 {
-                    System.Diagnostics.Debug.WriteLine($"RenderService: Device lost during render: {ex.Message}");
+                    Logger<RenderService>.Instance.Error("Device lost during render", ex);
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"RenderService: Render error: {ex.Message}");
+                    Logger<RenderService>.Instance.Error("Render error", ex);
                 }
             }
         }
@@ -287,7 +288,7 @@ namespace ObjLoader.Services.Rendering
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"RenderService: Failed to check device status: {ex.Message}");
+                Logger<RenderService>.Instance.Error("Failed to check device status", ex);
                 return true;
             }
         }

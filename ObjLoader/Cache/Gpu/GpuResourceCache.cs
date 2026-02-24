@@ -2,6 +2,7 @@
 using System.Diagnostics.CodeAnalysis;
 using ObjLoader.Infrastructure;
 using Vortice.Direct3D11;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Cache.Gpu
 {
@@ -186,7 +187,7 @@ namespace ObjLoader.Cache.Gpu
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"GpuResourceCache: Failed to check device removed reason: {ex.Message}");
+                            Logger<GpuResourceCache>.Instance.Error("Failed to check device removed reason", ex);
                             shouldRemove = true;
                         }
                     }
@@ -216,7 +217,7 @@ namespace ObjLoader.Cache.Gpu
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"GpuResourceCache: Dispose failed: {ex.Message}");
+                Logger<GpuResourceCache>.Instance.Error("Dispose failed", ex);
             }
         }
     }

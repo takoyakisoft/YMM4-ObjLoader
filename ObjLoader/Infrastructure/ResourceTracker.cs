@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using ObjLoader.Utilities.Logging;
 
 namespace ObjLoader.Infrastructure
 {
@@ -109,7 +110,7 @@ namespace ObjLoader.Infrastructure
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"ResourceTracker: Failed to check leaked resource: {ex.Message}");
+                    Logger<ResourceTracker>.Instance.Error("Failed to check leaked resource", ex);
                 }
             }
 
@@ -136,7 +137,7 @@ namespace ObjLoader.Infrastructure
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"ResourceTracker: Failed to check orphaned resource: {ex.Message}");
+                    Logger<ResourceTracker>.Instance.Error("Failed to check orphaned resource", ex);
                 }
             }
 
@@ -174,7 +175,7 @@ namespace ObjLoader.Infrastructure
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"ResourceTracker: Failed to collect stats: {ex.Message}");
+                    Logger<ResourceTracker>.Instance.Error("Failed to collect stats", ex);
                 }
             }
 
@@ -233,7 +234,7 @@ namespace ObjLoader.Infrastructure
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ResourceTracker: Failed to record disposal: {ex.Message}");
+                Logger<ResourceTracker>.Instance.Error("Failed to record disposal", ex);
             }
         }
 
@@ -260,7 +261,7 @@ namespace ObjLoader.Infrastructure
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ResourceTracker: Failed to trim history: {ex.Message}");
+                Logger<ResourceTracker>.Instance.Error("Failed to trim history", ex);
             }
         }
 
@@ -299,7 +300,7 @@ namespace ObjLoader.Infrastructure
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"ResourceTracker: Failed to force dispose leaked resource: {ex.Message}");
+                    Logger<ResourceTracker>.Instance.Error("Failed to force dispose leaked resource", ex);
                 }
             }
             return disposed;
