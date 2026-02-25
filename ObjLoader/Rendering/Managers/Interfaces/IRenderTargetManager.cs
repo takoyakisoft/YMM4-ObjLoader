@@ -10,7 +10,9 @@ namespace ObjLoader.Rendering.Managers.Interfaces
         ID3D11RenderTargetView? RenderTargetView { get; }
         ID3D11Texture2D? DepthStencilTexture { get; }
         ID3D11DepthStencilView? DepthStencilView { get; }
+        ID3D11ShaderResourceView? DepthCopySRV { get; }
         D2D.ID2D1Bitmap1? SharedBitmap { get; }
         bool EnsureSize(IGraphicsDevicesAndContext devices, int width, int height);
+        void CopyDepthBuffer(ID3D11DeviceContext context);
     }
 }

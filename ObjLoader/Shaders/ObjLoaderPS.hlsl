@@ -87,6 +87,14 @@ float3 HSVtoRGB(float3 c)
     return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
+float ToonQuantize(float value, float steps, float smoothness)
+{
+    float scaled = value * steps;
+    float stepped = floor(scaled) / steps;
+    float blend = smoothstep(0.5 - smoothness * 0.5, 0.5 + smoothness * 0.5, frac(scaled));
+    return stepped + blend / steps;
+}
+
 float GetShadowBias(float3 N, float3 L)
 {
     float NdotL = max(dot(N, L), 0.0);
@@ -232,28 +240,23 @@ float DistributionGGX(float3 N, float3 H, float roughness)
     float a2 = a * a;
     float NdotH = max(dot(N, H), 0.0);
     float NdotH2 = NdotH * NdotH;
-    float num = a2;
     float denom = (NdotH2 * (a2 - 1.0) + 1.0);
     denom = PI * denom * denom;
-    return num / max(denom, 0.0001);
+    return a2 / max(denom, 0.0001);
 }
 
 float GeometrySchlickGGX(float NdotV, float roughness)
 {
     float r = (roughness + 1.0);
     float k = (r * r) / 8.0;
-    float num = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-    return num / max(denom, 0.0001);
+    return NdotV / max(NdotV * (1.0 - k) + k, 0.0001);
 }
 
 float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
 {
     float NdotV = max(dot(N, V), 0.0);
     float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
-    return ggx1 * ggx2;
+    return GeometrySchlickGGX(NdotV, roughness) * GeometrySchlickGGX(NdotL, roughness);
 }
 
 float3 FresnelSchlick(float cosTheta, float3 F0)
@@ -401,8 +404,11 @@ float4 PS(PS_IN input) : SV_Target
     
     float3 N = normalize(input.norm);
     float3 V = normalize(CameraPos.xyz - input.wPos);
-    float3 F0 = float3(0.04, 0.04, 0.04);
-    F0 = lerp(F0, albedo, metallic);
+    float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+
+    bool toonEnabled = ToonParams.x > 0.5f;
+    float toonSteps = max(ToonParams.y, 1.0);
+    float toonSmoothness = ToonParams.z;
 
     float3 Lo = float3(0.0, 0.0, 0.0);
     
@@ -432,7 +438,11 @@ float4 PS(PS_IN input) : SV_Target
 
         float3 L = lightDir;
         float3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
+        float rawNdotL = max(dot(N, L), 0.0);
+
+        float effectiveNdotL = toonEnabled
+            ? ToonQuantize(rawNdotL, toonSteps, toonSmoothness)
+            : rawNdotL;
         
         float shadow = 1.0f;
         if (ShadowParams.x > 0.5f && (type == 1 || type == 2))
@@ -447,15 +457,20 @@ float4 PS(PS_IN input) : SV_Target
         float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
         
         float3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0001) * max(NdotL, 0.0001);
+        float denominator = 4.0 * max(dot(N, V), 0.0001) * max(rawNdotL, 0.0001);
         float3 specular = numerator / denominator * SpecularIntensity;
 
-        float3 kS = F;
-        float3 kD = float3(1.0, 1.0, 1.0) - kS;
-        kD *= 1.0 - metallic;
-        kD = max(kD, 0.0);
+        if (toonEnabled)
+        {
+            float specLum = dot(specular, float3(0.299, 0.587, 0.114));
+            float specThreshold = ToonQuantize(specLum, toonSteps, toonSmoothness);
+            specular = specular * step(0.5 / toonSteps, specThreshold);
+        }
 
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;
+        float3 kS = F;
+        float3 kD = max(float3(1.0, 1.0, 1.0) - kS, 0.0) * (1.0 - metallic);
+
+        Lo += (kD * albedo / PI + specular) * radiance * effectiveNdotL;
     }
 
     float3 ambient = float3(0, 0, 0);
@@ -464,8 +479,7 @@ float4 PS(PS_IN input) : SV_Target
     {
         float NdotV = max(dot(N, V), 0.0001);
         float3 kS = FresnelSchlickRoughness(NdotV, F0, roughness);
-        float3 kD = saturate(1.0 - kS);
-        kD *= 1.0 - metallic;
+        float3 kD = saturate(1.0 - kS) * (1.0 - metallic);
         
         float maxMip = IblParams.y > 0.0 ? IblParams.y : 6.0;
         float3 irradiance = EnvironmentMap.SampleLevel(sam, N, maxMip).rgb;
@@ -489,14 +503,9 @@ float4 PS(PS_IN input) : SV_Target
     }
     else
     {
-        if (LightEnabled > 0.5f)
-        {
-            ambient = float3(0.03, 0.03, 0.03) * albedo * ao;
-        }
-        else
-        {
-            ambient = albedo;
-        }
+        ambient = (LightEnabled > 0.5f)
+            ? float3(0.03, 0.03, 0.03) * albedo * ao
+            : albedo;
     }
 
     float3 color = ambient + Lo;

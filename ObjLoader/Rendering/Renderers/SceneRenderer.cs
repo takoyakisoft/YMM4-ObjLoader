@@ -47,6 +47,7 @@ namespace ObjLoader.Rendering.Renderers
         private readonly ID3D11ShaderResourceView[] _srvSlot0 = new ID3D11ShaderResourceView[1];
         private readonly ID3D11ShaderResourceView[] _srvSlot1 = new ID3D11ShaderResourceView[1];
         private readonly ID3D11ShaderResourceView[] _srvSlot2 = new ID3D11ShaderResourceView[1];
+        private readonly ID3D11ShaderResourceView[] _srvSlot3 = new ID3D11ShaderResourceView[1];
 
         private readonly List<(LayerData Data, GpuResourceCacheItem Resource, LayerState State, ID3D11Buffer? OverrideVB)> _singleLayerBuffer = new(1);
 
@@ -112,14 +113,16 @@ namespace ObjLoader.Rendering.Renderers
                 mainProj = Matrix4x4.CreatePerspectiveFieldOfView(radFov, aspect, RenderingConstants.DefaultNearPlane, RenderingConstants.DefaultFarPlane);
             }
 
-            var targets = new[]
+            var mainViewProj = mainView * mainProj;
+
+            var envFaceTargets = new[]
             {
                 new Vector3(1, 0, 0), new Vector3(-1, 0, 0),
                 new Vector3(0, 1, 0), new Vector3(0, -1, 0),
                 new Vector3(0, 0, 1), new Vector3(0, 0, -1)
             };
 
-            var ups = new[]
+            var envFaceUps = new[]
             {
                 new Vector3(0, 1, 0), new Vector3(0, 1, 0),
                 new Vector3(0, 0, -1), new Vector3(0, 0, 1),
@@ -143,30 +146,25 @@ namespace ObjLoader.Rendering.Renderers
                 for (int i = 0; i < layers.Count; i++)
                 {
                     var item = layers[i];
-                    Matrix4x4 hierarchyMatrix = RenderUtils.GetLayerTransform(item.State);
-                    var currentGuid = item.State.ParentGuid;
-                    int depth = 0;
-
-                    while (!string.IsNullOrEmpty(currentGuid) && layerStates.TryGetValue(currentGuid, out var parentState))
-                    {
-                        hierarchyMatrix *= RenderUtils.GetLayerTransform(parentState);
-                        currentGuid = parentState.ParentGuid;
-                        depth++;
-                        if (depth > MaxHierarchyDepth) break;
-                    }
-
+                    var hierarchyMatrix = BuildHierarchyMatrix(item.State, layerStates);
                     var normalize = Matrix4x4.CreateTranslation(-item.Resource.ModelCenter) * Matrix4x4.CreateScale(item.Resource.ModelScale);
                     var world = normalize * hierarchyMatrix;
-                    Vector3 pos = world.Translation;
 
-                    _layerWorldCenters[i] = pos;
-                    minBounds = Vector3.Min(minBounds, pos);
-                    maxBounds = Vector3.Max(maxBounds, pos);
-
+                    _layerWorldCenters[i] = world.Translation;
                     _useLocalCenter[i] = !string.IsNullOrEmpty(item.State.ParentGuid);
+
+                    minBounds = Vector3.Min(minBounds, world.Translation);
+                    maxBounds = Vector3.Max(maxBounds, world.Translation);
                 }
 
                 globalCenter = (minBounds + maxBounds) * 0.5f;
+            }
+
+            if (layers.Count > 0 && _renderTargets.DepthStencilView != null)
+            {
+                DepthPrePass(context, layers, layerStates, mainViewProj, width, height);
+                context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+                _renderTargets.CopyDepthBuffer(context);
             }
 
             for (int i = 0; i < layers.Count; i++)
@@ -183,11 +181,11 @@ namespace ObjLoader.Rendering.Renderers
                         context.ClearRenderTargetView(_resources.EnvironmentRTVs[face], new Color4(0, 0, 0, 0));
                         context.ClearDepthStencilView(_resources.EnvironmentDSV, DepthStencilClearFlags.Depth, 1.0f, 0);
 
-                        var view = Matrix4x4.CreateLookAt(captureCenter, captureCenter + targets[face], ups[face]);
+                        var view = Matrix4x4.CreateLookAt(captureCenter, captureCenter + envFaceTargets[face], envFaceUps[face]);
                         view *= Matrix4x4.CreateScale(-1, 1, 1);
                         var proj = Matrix4x4.CreatePerspectiveFieldOfView((float)(Math.PI / 2.0), 1.0f, RenderingConstants.DefaultNearPlane, RenderingConstants.DefaultFarPlane);
 
-                        RenderScene(context, layers, layerStates, parameter, view, proj, captureCenter.X, captureCenter.Y, captureCenter.Z, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, RenderingConstants.EnvironmentMapSize, RenderingConstants.EnvironmentMapSize, false, _resources.CullNoneRasterizerState, _resources.DepthStencilState, dynamicTextureCache, i);
+                        RenderScene(context, layers, layerStates, parameter, view, proj, captureCenter.X, captureCenter.Y, captureCenter.Z, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, RenderingConstants.EnvironmentMapSize, RenderingConstants.EnvironmentMapSize, false, _resources.CullNoneRasterizerState, _resources.DepthStencilState, dynamicTextureCache, i, null);
                     }
 
                     context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
@@ -198,7 +196,7 @@ namespace ObjLoader.Rendering.Renderers
 
                 _singleLayerBuffer.Clear();
                 _singleLayerBuffer.Add(layers[i]);
-                RenderScene(context, _singleLayerBuffer, layerStates, parameter, mainView, mainProj, camX, camY, camZ, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, width, height, true, null, null, dynamicTextureCache);
+                RenderScene(context, _singleLayerBuffer, layerStates, parameter, mainView, mainProj, camX, camY, camZ, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, width, height, true, null, null, dynamicTextureCache, -1, _renderTargets.DepthCopySRV);
             }
 
             context.PSSetShaderResources(RenderingConstants.SlotEnvironmentMap, 1, _nullSrv1);
@@ -211,6 +209,78 @@ namespace ObjLoader.Rendering.Renderers
             context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
             context.PSSetShaderResources(0, 4, _nullSrv4);
             context.VSSetShaderResources(0, 4, _nullSrv4);
+        }
+
+        private static Matrix4x4 BuildHierarchyMatrix(LayerState state, Dictionary<string, LayerState> layerStates)
+        {
+            var matrix = RenderUtils.GetLayerTransform(state);
+            var currentGuid = state.ParentGuid;
+            int depth = 0;
+
+            while (!string.IsNullOrEmpty(currentGuid) && layerStates.TryGetValue(currentGuid, out var parentState))
+            {
+                matrix *= RenderUtils.GetLayerTransform(parentState);
+                currentGuid = parentState.ParentGuid;
+                depth++;
+                if (depth > MaxHierarchyDepth) break;
+            }
+
+            return matrix;
+        }
+
+        private void DepthPrePass(
+            ID3D11DeviceContext context,
+            List<(LayerData Data, GpuResourceCacheItem Resource, LayerState State, ID3D11Buffer? OverrideVB)> layers,
+            Dictionary<string, LayerState> layerStates,
+            Matrix4x4 viewProj,
+            int width,
+            int height)
+        {
+            if (_cbPerObject == null) return;
+
+            context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), _renderTargets.DepthStencilView);
+            context.RSSetState(_resources.RasterizerState);
+            context.OMSetDepthStencilState(_resources.DepthStencilState);
+            context.RSSetViewport(0, 0, width, height);
+            context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+            context.IASetInputLayout(_resources.InputLayout);
+            context.VSSetShader(_resources.VertexShader);
+            context.PSSetShader(null);
+
+            for (int li = 0; li < layers.Count; li++)
+            {
+                var item = layers[li];
+                var state = item.State;
+                var resource = item.Resource;
+
+                var hierarchyMatrix = BuildHierarchyMatrix(state, layerStates);
+                var normalize = Matrix4x4.CreateTranslation(-resource.ModelCenter) * Matrix4x4.CreateScale(resource.ModelScale);
+                var world = normalize * hierarchyMatrix;
+                var wvp = world * viewProj;
+
+                var cbObject = new CBPerObject
+                {
+                    WorldViewProj = Matrix4x4.Transpose(wvp),
+                    World = Matrix4x4.Transpose(world)
+                };
+
+                _cbPerObject.Update(context, ref cbObject);
+                _cbPerObjectArray[0] = _cbPerObject.Buffer;
+                context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
+
+                int stride = Unsafe.SizeOf<ObjVertex>();
+                _vbArray[0] = item.OverrideVB ?? resource.VertexBuffer;
+                _strideArray[0] = stride;
+                context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
+                context.IASetIndexBuffer(resource.IndexBuffer, Format.R32_UInt, 0);
+
+                for (int i = 0; i < resource.Parts.Length; i++)
+                {
+                    if (item.Data.VisibleParts != null && !item.Data.VisibleParts.Contains(i)) continue;
+                    var part = resource.Parts[i];
+                    context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
+                }
+            }
         }
 
         private void RenderScene(
@@ -230,7 +300,8 @@ namespace ObjLoader.Rendering.Renderers
             ID3D11RasterizerState? rasterizerState = null,
             ID3D11DepthStencilState? depthStencilState = null,
             IReadOnlyDictionary<string, ID3D11ShaderResourceView>? dynamicTextureCache = null,
-            int skipIndex = -1)
+            int skipIndex = -1,
+            ID3D11ShaderResourceView? depthSrv = null)
         {
             context.RSSetState(rasterizerState ?? _resources.RasterizerState);
             context.OMSetDepthStencilState(depthStencilState ?? _resources.DepthStencilState);
@@ -245,6 +316,16 @@ namespace ObjLoader.Rendering.Renderers
             if (_resources.ShadowSampler != null)
             {
                 _shadowSamplerArray[0] = _resources.ShadowSampler;
+            }
+
+            if (depthSrv != null)
+            {
+                _srvSlot3[0] = depthSrv;
+                context.PSSetShaderResources(RenderingConstants.SlotDepthMap, 1, _srvSlot3);
+            }
+            else
+            {
+                context.PSSetShaderResources(RenderingConstants.SlotDepthMap, 1, _nullSrv1);
             }
 
             var viewProj = view * proj;
@@ -292,17 +373,7 @@ namespace ObjLoader.Rendering.Renderers
                     context.PSSetShaderResources(RenderingConstants.SlotEnvironmentMap, 1, _nullSrv1);
                 }
 
-                Matrix4x4 hierarchyMatrix = RenderUtils.GetLayerTransform(state);
-                var currentGuid = state.ParentGuid;
-                int depth = 0;
-                while (!string.IsNullOrEmpty(currentGuid) && layerStates.TryGetValue(currentGuid, out var parentState))
-                {
-                    hierarchyMatrix *= RenderUtils.GetLayerTransform(parentState);
-                    currentGuid = parentState.ParentGuid;
-                    depth++;
-                    if (depth > MaxHierarchyDepth) break;
-                }
-
+                var hierarchyMatrix = BuildHierarchyMatrix(state, layerStates);
                 var normalize = Matrix4x4.CreateTranslation(-resource.ModelCenter) * Matrix4x4.CreateScale(resource.ModelScale);
                 var world = normalize * hierarchyMatrix;
                 var wvp = world * viewProj;

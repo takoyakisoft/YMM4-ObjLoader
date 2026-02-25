@@ -28,6 +28,7 @@ namespace ObjLoader.Rendering.Core
         public const int SlotStandardTexture = 0;
         public const int SlotShadowMap = 1;
         public const int SlotEnvironmentMap = 2;
+        public const int SlotDepthMap = 3;
 
         public const int SlotStandardSampler = 0;
         public const int SlotShadowSampler = 1;
