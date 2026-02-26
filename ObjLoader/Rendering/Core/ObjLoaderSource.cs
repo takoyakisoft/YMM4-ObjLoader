@@ -1,4 +1,6 @@
-﻿using ObjLoader.Cache.Gpu;
+﻿using ObjLoader.Api;
+using ObjLoader.Api.Core;
+using ObjLoader.Cache.Gpu;
 using ObjLoader.Core.Models;
 using ObjLoader.Core.Timeline;
 using ObjLoader.Localization;
@@ -61,7 +63,12 @@ namespace ObjLoader.Rendering.Core
 
         private ImmutableDictionary<string, LayerState> _layerStates = ImmutableDictionary<string, LayerState>.Empty;
 
+        private ObjLoaderSceneApi? _sceneApi;
+        private Guid _registrationToken;
+
         private bool _isDisposed;
+        private TimelineItemSourceDescription _lastDesc = default!;
+        private bool _hasDesc;
 
         private static readonly ID3D11ShaderResourceView[] _emptySrvArray4 = new ID3D11ShaderResourceView[4];
         private static readonly ID3D11Buffer[] _emptyBufferArray1 = new ID3D11Buffer[1];
@@ -132,6 +139,23 @@ namespace ObjLoader.Rendering.Core
             _shaderManager = new CustomShaderManager(devices);
             _shadowRenderer = new ShadowRenderer(devices, _resources);
             _sceneRenderer = new SceneRenderer(devices, _resources, _renderTargets, _shaderManager);
+
+            _sceneApi = new ObjLoaderSceneApi(
+                _parameter,
+                _parameter.GetLayerManager(),
+                () =>
+                {
+                    var ds = _renderTargets.DepthStencilTexture;
+                    return (ds, (int)_parameter.ScreenWidth.GetValue(0, 1, 1), (int)_parameter.ScreenHeight.GetValue(0, 1, 1));
+                },
+                () => _renderTargets.DepthCopySRV,
+                () =>
+                {
+                    return (Matrix4x4.Identity, Matrix4x4.Identity, (int)_parameter.ScreenWidth.GetValue(0, 1, 1), (int)_parameter.ScreenHeight.GetValue(0, 1, 1));
+                },
+                ForceRender);
+
+            _registrationToken = SceneContext.Register(_parameter.InstanceId, _sceneApi);
         }
 
         private static string GetCacheKey(string filePath) => $"{CacheKeyPrefix}{filePath}";
@@ -163,6 +187,9 @@ namespace ObjLoader.Rendering.Core
         {
             if (_isDisposed) return;
 
+            _lastDesc = desc;
+            _hasDesc = true;
+
             lock (SharedRenderLock)
             {
                 if (_isDisposed) return;
@@ -186,6 +213,34 @@ namespace ObjLoader.Rendering.Core
                     CreateEmptyCommandList();
                 }
             }
+        }
+
+        public D2D.ID2D1Image? ForceRender()
+        {
+            if (_isDisposed || !_hasDesc) return _commandList;
+
+            lock (SharedRenderLock)
+            {
+                if (!ValidateDeviceState()) return _commandList;
+
+                try
+                {
+                    UpdateInternal(_lastDesc);
+                }
+                catch (SharpGen.Runtime.SharpGenException ex) when (
+                    ex.HResult == unchecked((int)0x887A0005) ||
+                    ex.HResult == unchecked((int)0x887A0006) ||
+                    ex.HResult == unchecked((int)0x887A0007))
+                {
+                    GpuResourceCache.Instance.CleanupInvalidResources();
+                    CreateEmptyCommandList();
+                }
+                catch (Exception)
+                {
+                    CreateEmptyCommandList();
+                }
+            }
+            return _commandList;
         }
 
         private void UpdateInternal(TimelineItemSourceDescription desc)
@@ -330,7 +385,7 @@ namespace ObjLoader.Rendering.Core
 
                 var visibleParts = layer.VisibleParts;
                 previousStates.TryGetValue(layer.Guid, out var oldState);
-                
+
                 HashSet<int>? copiedVisibleParts = null;
                 if (visibleParts != null)
                 {
@@ -957,6 +1012,9 @@ namespace ObjLoader.Rendering.Core
             ClearDynamicTextureCache();
 
             D3DResourcesPool.Release(_devices.D3D.Device);
+
+            SceneContext.Unregister(_parameter.InstanceId, _registrationToken);
+            _sceneApi?.Dispose();
         }
 
         private static void SafeDispose(IDisposable? disposable)

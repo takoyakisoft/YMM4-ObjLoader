@@ -196,6 +196,9 @@ namespace ObjLoader.Plugin
         private int _versionCounter = 0;
 
         [Display(AutoGenerateField = false)]
+        public string InstanceId { get; set => Set(ref field, value); } = Guid.NewGuid().ToString("D");
+
+        [Display(AutoGenerateField = false)]
         [IgnoreDataMember]
         public double CurrentFrame
         {
@@ -504,6 +507,8 @@ namespace ObjLoader.Plugin
 
             return string.Empty;
         }
+
+        internal ILayerManager GetLayerManager() => _layerManager;
 
         private static string SanitizeShaderPath(string? value)
         {

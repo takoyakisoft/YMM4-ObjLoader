@@ -1,0 +1,27 @@
+using ObjLoader.Api.Camera;
+using ObjLoader.Api.Draw;
+using ObjLoader.Api.Objects;
+using ObjLoader.Api.Light;
+using ObjLoader.Api.Material;
+using ObjLoader.Api.DepthBuffer;
+using ObjLoader.Api.Raycast;
+using ObjLoader.Api.Events;
+using ObjLoader.Api.Transaction;
+using ObjLoader.Api.Attachment;
+
+namespace ObjLoader.Api.Core
+{
+    public interface ISceneServices
+    {
+        ICameraApi Camera { get; }
+        ISceneDrawApi Draw { get; }
+        IObjectApi Objects { get; }
+        ILightApi Lights { get; }
+        IMaterialApi Materials { get; }
+        IDepthBufferApi DepthBuffer { get; }
+        IRaycastApi Raycast { get; }
+        ISceneEventApi Events { get; }
+        ITransactionApi Transactions { get; }
+        IAttachmentApi Attachments { get; }
+    }
+}
