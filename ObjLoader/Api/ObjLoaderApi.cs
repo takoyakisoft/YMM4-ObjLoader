@@ -23,9 +23,15 @@ namespace ObjLoader.Api
 
         public static ID2D1Image? ForceRender(string instanceId)
         {
-            if (SceneContext.TryGetScene(instanceId, out var services) && services is ObjLoaderSceneApi api)
+            if (SceneContext.TryGetScene(instanceId, out var services))
             {
-                return api.ForceRender();
+                if (services == null || services.IsDisposed)
+                    return null;
+
+                if (services is ObjLoaderSceneApi api)
+                {
+                    return api.ForceRender();
+                }
             }
             return null;
         }

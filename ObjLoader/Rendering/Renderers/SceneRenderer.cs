@@ -33,6 +33,7 @@ namespace ObjLoader.Rendering.Renderers
         private ConstantBuffer<CBPerFrame>? _cbPerFrame;
         private ConstantBuffer<CBPerObject>? _cbPerObject;
         private ConstantBuffer<CBPerMaterial>? _cbPerMaterial;
+        private ApiObjectRenderer? _apiObjectRenderer;
 
         private readonly ID3D11Buffer[] _cbPerFrameArray = new ID3D11Buffer[1];
         private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
@@ -40,7 +41,8 @@ namespace ObjLoader.Rendering.Renderers
 
         private readonly ID3D11Buffer[] _vbArray = new ID3D11Buffer[1];
         private readonly int[] _strideArray = new int[1];
-        private readonly int[] _offsetArray = [0];
+        private readonly int[] _offsetArray = { 0 };
+
         private readonly ID3D11SamplerState[] _samplerArray = new ID3D11SamplerState[1];
         private readonly ID3D11SamplerState[] _shadowSamplerArray = new ID3D11SamplerState[1];
 
@@ -67,10 +69,6 @@ namespace ObjLoader.Rendering.Renderers
             new Vector3(0, 1, 0), new Vector3(0, 1, 0)
         ];
 
-
-        private ID3D11Buffer? _billboardVb;
-        private ID3D11Buffer? _billboardIb;
-
         public SceneRenderer(
             IGraphicsDevicesAndContext devices,
             D3DResources resources,
@@ -87,27 +85,7 @@ namespace ObjLoader.Rendering.Renderers
             _cbPerFrame = new ConstantBuffer<CBPerFrame>(_devices.D3D.Device);
             _cbPerObject = new ConstantBuffer<CBPerObject>(_devices.D3D.Device);
             _cbPerMaterial = new ConstantBuffer<CBPerMaterial>(_devices.D3D.Device);
-
-            var verts = new ObjVertex[]
-            {
-                new ObjVertex { Position = new Vector3(-0.5f, 0.5f, 0), Normal = new Vector3(0,0,-1), TexCoord = new Vector2(0,0) },
-                new ObjVertex { Position = new Vector3(0.5f, 0.5f, 0), Normal = new Vector3(0,0,-1), TexCoord = new Vector2(1,0) },
-                new ObjVertex { Position = new Vector3(-0.5f, -0.5f, 0), Normal = new Vector3(0,0,-1), TexCoord = new Vector2(0,1) },
-                new ObjVertex { Position = new Vector3(0.5f, -0.5f, 0), Normal = new Vector3(0,0,-1), TexCoord = new Vector2(1,1) }
-            };
-            var indices = new int[] { 0, 1, 2, 2, 1, 3 };
-
-            unsafe
-            {
-                fixed (ObjVertex* pVerts = verts)
-                {
-                    _billboardVb = _devices.D3D.Device.CreateBuffer(new BufferDescription(verts.Length * Unsafe.SizeOf<ObjVertex>(), BindFlags.VertexBuffer, ResourceUsage.Immutable), new SubresourceData(pVerts));
-                }
-                fixed (int* pIndices = indices)
-                {
-                    _billboardIb = _devices.D3D.Device.CreateBuffer(new BufferDescription(indices.Length * sizeof(int), BindFlags.IndexBuffer, ResourceUsage.Immutable), new SubresourceData(pIndices));
-                }
-            }
+            _apiObjectRenderer = new ApiObjectRenderer(_devices.D3D.Device, _resources);
         }
 
         public void Render(
@@ -226,8 +204,8 @@ namespace ObjLoader.Rendering.Renderers
 
                             var envViewProj = view * proj;
                             var camPosEnv = new Vector4(captureCenter.X, captureCenter.Y, captureCenter.Z, 1.0f);
-                            RenderApiObjects(context, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
-                            RenderBillboards(context, view, proj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
+                            _apiObjectRenderer?.RenderApiObjects(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
+                            _apiObjectRenderer?.RenderBillboards(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
                         }
 
                         context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
@@ -243,8 +221,8 @@ namespace ObjLoader.Rendering.Renderers
 
                 context.OMSetRenderTargets(_renderTargets.RenderTargetView, _renderTargets.DepthStencilView);
                 var camPosRender = new Vector4((float)camX, (float)camY, (float)camZ, 1.0f);
-                RenderApiObjects(context, mainViewProj, camPosRender, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, true);
-                RenderBillboards(context, mainView, mainProj, camPosRender, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, true);
+                _apiObjectRenderer?.RenderApiObjects(context, _sceneDrawManager, mainViewProj, camPosRender, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, true);
+                _apiObjectRenderer?.RenderBillboards(context, _sceneDrawManager, mainViewProj, camPosRender, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, true);
 
                 context.VSSetShader(null);
                 context.PSSetShader(null);
@@ -263,6 +241,7 @@ namespace ObjLoader.Rendering.Renderers
             context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
             context.PSSetShaderResources(0, 4, _nullSrv4);
             context.VSSetShaderResources(0, 4, _nullSrv4);
+            context.RSSetState(null);
         }
 
         private static Matrix4x4 BuildHierarchyMatrix(LayerState state, Dictionary<string, LayerState> layerStates)
@@ -518,182 +497,15 @@ namespace ObjLoader.Rendering.Renderers
             context.PSSetShaderResources(0, 1, _nullSrv1);
         }
 
-        private void RenderApiObjects(
-            ID3D11DeviceContext context,
-            Matrix4x4 viewProj,
-            Vector4 camPos,
-            Matrix4x4[] lightViewProjs,
-            float[] cascadeSplits,
-            bool shadowValid,
-            int activeWorldId,
-            bool bindEnvironment)
-        {
-            var externalObjects = (List<Api.Draw.ExternalObjectHandle>)_sceneDrawManager.GetExternalObjects();
-            if (externalObjects.Count == 0 || _cbPerFrame == null || _cbPerObject == null || _cbPerMaterial == null) return;
-
-            context.VSSetShader(_resources.VertexShader);
-            context.PSSetShader(_resources.PixelShader);
-            context.IASetInputLayout(_resources.InputLayout);
-            context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-
-            var lightPos = new Vector4(0, 10, 0, 1.0f);
-            var amb = new Vector4(0.2f, 0.2f, 0.2f, 1.0f);
-            var lCol = new Vector4(1, 1, 1, 1);
-
-            CBPerFrame cbFrame = ConstantBufferFactory.CreatePerFrameForScene(
-                viewProj, camPos, lightPos, amb, lCol,
-                lightViewProjs, cascadeSplits,
-                0, shadowValid, activeWorldId, 0, bindEnvironment);
-            _cbPerFrame.Update(context, ref cbFrame);
-            _cbPerFrameArray[0] = _cbPerFrame.Buffer;
-            context.VSSetConstantBuffers(0, 1, _cbPerFrameArray);
-            context.PSSetConstantBuffers(0, 1, _cbPerFrameArray);
-
-            for (int i = 0; i < externalObjects.Count; i++)
-            {
-                var obj = externalObjects[i];
-                if (!obj.IsVisible || string.IsNullOrEmpty(obj.Descriptor.FilePath)) continue;
-                
-                string cacheKey = "export:" + obj.Descriptor.FilePath;
-                if (!ObjLoader.Cache.Gpu.GpuResourceCache.Instance.TryGetValue(cacheKey, out var resource) || resource == null || resource.VertexBuffer == null || resource.IndexBuffer == null)
-                {
-                    continue;
-                }
-
-                var world = obj.CurrentTransform.ToMatrix();
-
-                var wvp = world * viewProj;
-                CBPerObject cbObject = new CBPerObject { WorldViewProj = Matrix4x4.Transpose(wvp), World = Matrix4x4.Transpose(world) };
-                _cbPerObject.Update(context, ref cbObject);
-                _cbPerObjectArray[0] = _cbPerObject.Buffer;
-                context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
-
-                _vbArray[0] = resource.VertexBuffer;
-                _strideArray[0] = System.Runtime.CompilerServices.Unsafe.SizeOf<ObjLoader.Core.Models.ObjVertex>();
-                context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
-                context.IASetIndexBuffer(resource.IndexBuffer, Vortice.DXGI.Format.R32_UInt, 0);
-
-                for (int p = 0; p < resource.Parts.Length; p++)
-                {
-                    var part = resource.Parts[p];
-                    var texView = resource.PartTextures[p];
-
-                    _srvSlot0[0] = texView != null ? texView : _resources.WhiteTextureView!;
-                    context.PSSetShaderResources(RenderingConstants.SlotStandardTexture, 1, _srvSlot0);
-
-                    CBPerMaterial cbMaterial = ConstantBufferFactory.CreatePerMaterial(
-                        0, 
-                        texView != null ? Vector4.One : part.BaseColor, 
-                        true, 1.0f, 32.0f, 0.5f, 0.0f);
-                    
-                    _cbPerMaterial.Update(context, ref cbMaterial);
-                    _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
-                    context.PSSetConstantBuffers(2, 1, _cbPerMaterialArray);
-
-                    context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
-                }
-            }
-        }
-
-        private void RenderBillboards(
-            ID3D11DeviceContext context,
-            Matrix4x4 view,
-            Matrix4x4 proj,
-            Vector4 camPos,
-            Matrix4x4[] lightViewProjs,
-            float[] cascadeSplits,
-            bool shadowValid,
-            int activeWorldId,
-            bool bindEnvironment)
-        {
-            context.OMSetDepthStencilState(_resources.DepthStencilState);
-            var billboards = (List<(Api.Core.SceneObjectId Id, Api.Draw.BillboardDescriptor Desc)>)_sceneDrawManager.GetBillboards();
-            if (billboards.Count == 0 || _billboardVb == null || _billboardIb == null || _cbPerFrame == null || _cbPerObject == null || _cbPerMaterial == null) return;
-
-            context.OMSetBlendState(_resources.BillboardBlendState, new Color4(0, 0, 0, 0), -1);
-
-            context.IASetInputLayout(_resources.InputLayout);
-            context.VSSetShader(_resources.VertexShader);
-            context.PSSetShader(_resources.PixelShader);
-            context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-
-            int stride = Unsafe.SizeOf<ObjVertex>();
-            _vbArray[0] = _billboardVb;
-            _strideArray[0] = stride;
-            context.IASetVertexBuffers(0, 1, _vbArray, _strideArray, _offsetArray);
-            context.IASetIndexBuffer(_billboardIb, Format.R32_UInt, 0);
-
-            var viewProj = view * proj;
-
-            var lightPos = new Vector4(0, 10, 0, 1.0f);
-            var amb = new Vector4(1, 1, 1, 1);
-            var lCol = new Vector4(1, 1, 1, 1);
-
-            CBPerFrame cbFrame = ConstantBufferFactory.CreatePerFrameForScene(
-                viewProj, camPos, lightPos, amb, lCol,
-                lightViewProjs, cascadeSplits,
-                0, shadowValid, activeWorldId, 0, bindEnvironment);
-
-            _cbPerFrame.Update(context, ref cbFrame);
-            _cbPerFrameArray[0] = _cbPerFrame.Buffer;
-            context.VSSetConstantBuffers(0, 1, _cbPerFrameArray);
-            context.PSSetConstantBuffers(0, 1, _cbPerFrameArray);
-
-            Vector3 camPos3 = new Vector3(camPos.X, camPos.Y, camPos.Z);
-
-            for (int i = 0; i < billboards.Count; i++)
-            {
-                var b = billboards[i];
-                if (b.Desc.Opacity <= 0) continue;
-                var srv = _sceneDrawManager.GetBillboardSrv(b.Id);
-                if (srv == null) continue;
-
-                Matrix4x4 world;
-                if (b.Desc.FaceCamera)
-                {
-                    world = Matrix4x4.CreateScale(b.Desc.Size.X, b.Desc.Size.Y, 1.0f) * Matrix4x4.CreateBillboard(b.Desc.WorldPosition, camPos3, Vector3.UnitY, Vector3.UnitZ);
-                }
-                else
-                {
-                    world = Matrix4x4.CreateScale(b.Desc.Size.X, b.Desc.Size.Y, 1.0f) * Matrix4x4.CreateTranslation(b.Desc.WorldPosition);
-                }
-
-                var wvp = world * viewProj;
-
-                CBPerObject cbObject = new CBPerObject
-                {
-                    WorldViewProj = Matrix4x4.Transpose(wvp),
-                    World = Matrix4x4.Transpose(world)
-                };
-                _cbPerObject.Update(context, ref cbObject);
-                _cbPerObjectArray[0] = _cbPerObject.Buffer;
-                context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
-
-                CBPerMaterial cbMaterial = ConstantBufferFactory.CreatePerMaterial(
-                    b.Desc.WorldId,
-                    new Vector4(1, 1, 1, b.Desc.Opacity),
-                    false, 1.0f, 0.0f, 1.0f, 0.0f);
-                _cbPerMaterial.Update(context, ref cbMaterial);
-                _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
-                context.PSSetConstantBuffers(2, 1, _cbPerMaterialArray);
-
-                _srvSlot0[0] = srv;
-                context.PSSetShaderResources(RenderingConstants.SlotStandardTexture, 1, _srvSlot0);
-
-                context.DrawIndexed(6, 0, 0);
-            }
-        }
-
         public void Dispose()
         {
             if (_isDisposed) return;
             _isDisposed = true;
 
+            _apiObjectRenderer?.Dispose();
             _cbPerFrame?.Dispose();
             _cbPerObject?.Dispose();
             _cbPerMaterial?.Dispose();
-            _billboardVb?.Dispose();
-            _billboardIb?.Dispose();
         }
     }
 }

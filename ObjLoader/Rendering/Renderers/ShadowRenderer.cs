@@ -1,4 +1,4 @@
-﻿using ObjLoader.Cache.Gpu;
+using ObjLoader.Cache.Gpu;
 using ObjLoader.Core.Models;
 using ObjLoader.Core.Timeline;
 using ObjLoader.Rendering.Core;
@@ -9,7 +9,6 @@ using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using YukkuriMovieMaker.Commons;
-using MapFlags = Vortice.Direct3D11.MapFlags;
 
 namespace ObjLoader.Rendering.Renderers
 {
@@ -128,6 +127,7 @@ namespace ObjLoader.Rendering.Renderers
             }
 
             context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+            context.RSSetState(null);
 
             context.Flush();
         }

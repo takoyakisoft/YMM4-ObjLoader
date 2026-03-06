@@ -4,6 +4,8 @@ using ObjLoader.Settings;
 using ObjLoader.Services.Textures;
 using ObjLoader.Rendering.Managers;
 using ObjLoader.Rendering.Managers.Interfaces;
+using ObjLoader.Rendering.Renderers;
+using ObjLoader.Api.Draw;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media.Imaging;
@@ -16,8 +18,6 @@ using Matrix4x4 = System.Numerics.Matrix4x4;
 using ObjLoader.Core.Models;
 using ObjLoader.Cache.Gpu;
 using ObjLoader.Utilities.Logging;
-using System.Collections.Generic;
-using System;
 
 namespace ObjLoader.Services.Rendering
 {
@@ -25,7 +25,7 @@ namespace ObjLoader.Services.Rendering
     {
         private const int MaxLayerArrayCapacity = 1024;
 
-        private readonly string _instanceId = System.Guid.NewGuid().ToString("N").Substring(0, 8);
+        private readonly string _instanceId = Guid.NewGuid().ToString("N").Substring(0, 8);
         private readonly object _bitmapLock = new object();
 
         private ID3D11Device? _device;
@@ -50,6 +50,7 @@ namespace ObjLoader.Services.Rendering
         private ConstantBuffer<CBPerFrame>? _cbPerFrame;
         private ConstantBuffer<CBPerObject>? _cbPerObject;
         private ConstantBuffer<CBPerMaterial>? _cbPerMaterial;
+        private ApiObjectRenderer? _apiObjectRenderer;
 
         private readonly ID3D11ShaderResourceView[] _texArray = new ID3D11ShaderResourceView[1];
         private readonly ID3D11SamplerState[] _samplerArray = new ID3D11SamplerState[1];
@@ -77,6 +78,10 @@ namespace ObjLoader.Services.Rendering
         private readonly IDynamicTextureManager _dynamicTextureManager;
 
         private bool _isDisposed = false;
+        private string _targetInstanceId = "";
+
+        private LocalDrawManagerAdapter? _localDrawAdapter;
+        private ISceneDrawManager? _lastSharedDrawManager;
 
         public RenderService()
         {
@@ -102,8 +107,9 @@ namespace ObjLoader.Services.Rendering
 
         private string TrackingKey(string resourceName) => $"RenderSvc:{_instanceId}:{resourceName}";
 
-        public void Initialize()
+        public void Initialize(string targetInstanceId)
         {
+            _targetInstanceId = targetInstanceId;
             var result = D3D11.D3D11CreateDevice(null, DriverType.Hardware, DeviceCreationFlags.BgraSupport, new[] { FeatureLevel.Level_11_0 }, out _device, out _context);
             if (result.Failure || _device == null) return;
             _d3dResources = new D3DResources(_device!);
@@ -121,6 +127,9 @@ namespace ObjLoader.Services.Rendering
             }
 
             ResourceTracker.Instance.Register(TrackingKey("GridVertexBuffer"), "ID3D11Buffer:Grid", _gridVertexBuffer, gridBufferSize);
+
+            _apiObjectRenderer?.Dispose();
+            _apiObjectRenderer = new ApiObjectRenderer(_device, _d3dResources);
 
             _cbPerFrame = new ConstantBuffer<CBPerFrame>(_device);
             _cbPerObject = new ConstantBuffer<CBPerObject>(_device);
@@ -231,6 +240,12 @@ namespace ObjLoader.Services.Rendering
             _stagingTexture?.Dispose();
             _resolveTexture?.Dispose();
 
+            _apiObjectRenderer?.Dispose();
+            _apiObjectRenderer = null;
+            _localDrawAdapter?.Dispose();
+            _localDrawAdapter = null;
+            _lastSharedDrawManager = null;
+
             _renderTarget = newRenderTarget;
             _rtv = newRtv;
             _depthStencil = newDepthStencil;
@@ -258,6 +273,11 @@ namespace ObjLoader.Services.Rendering
             {
                 _stagingBuffer = new byte[requiredBufferSize];
                 _stagingBufferSize = requiredBufferSize;
+            }
+
+            if (_device != null && _d3dResources != null)
+            {
+                _apiObjectRenderer = new ApiObjectRenderer(_device, _d3dResources);
             }
 
             lock (_bitmapLock)
@@ -306,21 +326,18 @@ namespace ObjLoader.Services.Rendering
             bool isInteracting,
             bool enableShadow = true)
         {
-            lock (ObjLoaderSource.SharedRenderLock)
+            if (_isDisposed) return;
+            if (_device == null || _context == null || _rtv == null || _d3dResources == null || SceneImage == null || _stagingTexture == null) return;
+
+            if (IsDeviceLost()) return;
+
+            try
             {
-                if (_isDisposed) return;
-                if (_device == null || _context == null || _rtv == null || _d3dResources == null || SceneImage == null || _stagingTexture == null) return;
-
-                if (IsDeviceLost()) return;
-
-                try
-                {
-                    RenderInternal(layers, view, proj, camPos, themeColor, isWireframe, isGridVisible, isInfiniteGrid, gridScale, isInteracting, enableShadow);
-                }
-                catch (SharpGen.Runtime.SharpGenException ex) when (ex.HResult == unchecked((int)0x887A0005) || ex.HResult == unchecked((int)0x887A0006))
-                {
-                    Logger<RenderService>.Instance.Error("Device lost during render", ex);
-                }
+                RenderInternal(layers, view, proj, camPos, themeColor, isWireframe, isGridVisible, isInfiniteGrid, gridScale, isInteracting, enableShadow);
+            }
+            catch (SharpGen.Runtime.SharpGenException ex) when (ex.HResult == unchecked((int)0x887A0005) || ex.HResult == unchecked((int)0x887A0006))
+            {
+                Logger<RenderService>.Instance.Error("Device lost during render", ex);
             }
             UpdateBitmapFromStagingBuffer();
         }
@@ -396,11 +413,25 @@ namespace ObjLoader.Services.Rendering
 
             var dynamicTextures = _dynamicTextureManager.Textures;
 
-            RenderOpaqueParts(layers, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, renderShadowMap, dynamicTextures, view, proj, camPos, false);
+            RenderGridIfVisible(isGridVisible, isInfiniteGrid, gridScale, view, proj, camPos, gridColor, axisColor);
+
+            if (!isWireframe)
+            {
+                RenderOpaqueParts(layers, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, renderShadowMap, dynamicTextures, view, proj, camPos, false);
+            }
 
             RenderTransparentParts(layers, gridColor, axisColor, isInteracting, lightViewProj, enableShadow, isWireframe, dynamicTextures, view, proj, camPos, false);
 
-            RenderGridIfVisible(isGridVisible, isInfiniteGrid, gridScale, view, proj, camPos, gridColor, axisColor);
+            if (!string.IsNullOrEmpty(_targetInstanceId))
+            {
+                var adapter = GetOrCreateAdapter();
+                if (adapter != null)
+                {
+                    adapter.PurgeStaleEntries();
+                    RenderApiObjects(adapter, view, proj, camPos, isWireframe);
+                    RenderBillboards(adapter, view, proj, camPos);
+                }
+            }
 
             CopyToStagingBuffer();
         }
@@ -591,6 +622,7 @@ namespace ObjLoader.Services.Rendering
             }
 
             _context!.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+            _context.RSSetState(null);
             _context.Flush();
 
             return (renderShadowMap, lightViewProj);
@@ -821,28 +853,40 @@ namespace ObjLoader.Services.Rendering
             _context.CopyResource(_stagingTexture, _resolveTexture);
             _context.Flush();
 
-            var map = _context.Map(_stagingTexture!, 0, MapMode.Read, D3D11MapFlags.None);
             try
             {
-                int rowBytes = _viewportWidth * 4;
-                if (_stagingBuffer != null && _stagingBuffer.Length >= _viewportHeight * rowBytes)
+                var map = _context.Map(_stagingTexture!, 0, MapMode.Read, D3D11MapFlags.None);
+                try
                 {
-                    unsafe
+                    if (map.DataPointer != IntPtr.Zero)
                     {
-                        var srcPtr = (byte*)map.DataPointer;
-                        fixed (byte* dstBase = _stagingBuffer)
+                        int rowBytes = _viewportWidth * 4;
+                        if (_stagingBuffer != null && _stagingBuffer.Length >= _viewportHeight * rowBytes)
                         {
-                            for (int r = 0; r < _viewportHeight; r++)
+                            unsafe
                             {
-                                Buffer.MemoryCopy(srcPtr + (r * map.RowPitch), dstBase + (r * rowBytes), rowBytes, rowBytes);
+                                var srcPtr = (byte*)map.DataPointer;
+                                fixed (byte* dstBase = _stagingBuffer)
+                                {
+                                    for (int r = 0; r < _viewportHeight; r++)
+                                    {
+                                        Buffer.MemoryCopy(srcPtr + (r * map.RowPitch), dstBase + (r * rowBytes), rowBytes, rowBytes);
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                finally
+                {
+                    if (map.DataPointer != IntPtr.Zero)
+                    {
+                        _context.Unmap(_stagingTexture, 0);
+                    }
+                }
             }
-            finally
+            catch (SharpGen.Runtime.SharpGenException ex) when (ex.ResultCode.Code == unchecked((int)0x887A000A))
             {
-                _context.Unmap(_stagingTexture, 0);
             }
         }
 
@@ -887,6 +931,9 @@ namespace ObjLoader.Services.Rendering
             if (_context == null) return;
 
             _context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+            _context.OMSetBlendState(null, new Color4(0, 0, 0, 0), -1);
+            _context.OMSetDepthStencilState(null, 0);
+            _context.RSSetState(null);
 
             _context.PSSetShaderResources(0, _nullSrv4);
             _context.VSSetShaderResources(0, _nullSrv4);
@@ -949,6 +996,161 @@ namespace ObjLoader.Services.Rendering
             _context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
         }
 
+        private void RenderApiObjects(
+            LocalDrawManagerAdapter adapter,
+            Matrix4x4 view,
+            Matrix4x4 proj,
+            System.Numerics.Vector3 camPos,
+            bool isWireframe)
+        {
+            if (_context == null || _apiObjectRenderer == null) return;
+
+            if (!isWireframe && _d3dResources != null) _context.RSSetState(_d3dResources.RasterizerState);
+            var viewProj = view * proj;
+            _apiObjectRenderer.RenderApiObjects(_context, adapter, viewProj, new System.Numerics.Vector4(camPos, 1.0f), null, null, false, 0, false);
+        }
+
+        private void RenderBillboards(
+            LocalDrawManagerAdapter adapter,
+            Matrix4x4 view,
+            Matrix4x4 proj,
+            System.Numerics.Vector3 camPos)
+        {
+            if (_context == null || _apiObjectRenderer == null) return;
+
+            var viewProj = view * proj;
+            _apiObjectRenderer.RenderBillboards(_context, adapter, viewProj, new System.Numerics.Vector4(camPos, 1.0f), null, null, false, 0, false);
+        }
+
+        private LocalDrawManagerAdapter? GetOrCreateAdapter()
+        {
+            var drawManager = Shared.SharedResourceRegistry.GetDrawManager(_targetInstanceId);
+            if (drawManager == null) return null;
+            if (_device == null) return null;
+
+            if (_localDrawAdapter == null || _lastSharedDrawManager != drawManager)
+            {
+                _localDrawAdapter?.Dispose();
+                _localDrawAdapter = new LocalDrawManagerAdapter(drawManager, _device);
+                _lastSharedDrawManager = drawManager;
+            }
+
+            return _localDrawAdapter;
+        }
+
+        private sealed class LocalDrawManagerAdapter : ISceneDrawManager
+        {
+            private readonly ISceneDrawManager _inner;
+            private readonly ID3D11Device _device;
+            private readonly Dictionary<Api.Core.SceneObjectId, LocalBillboardEntry> _localSrvs = new();
+            private static readonly List<ExternalObjectHandle> _emptyExternalObjects = new();
+            private readonly HashSet<Api.Core.SceneObjectId> _activeIds = new();
+            private readonly List<Api.Core.SceneObjectId> _keysToRemove = new();
+
+            private sealed class LocalBillboardEntry : IDisposable
+            {
+                public nint Handle;
+                public ID3D11Texture2D? Texture;
+                public ID3D11ShaderResourceView? Srv;
+
+                public void Dispose()
+                {
+                    Srv?.Dispose();
+                    Texture?.Dispose();
+                }
+            }
+
+            public event EventHandler? Updated
+            {
+                add => _inner.Updated += value;
+                remove => _inner.Updated -= value;
+            }
+
+            public bool IsDirty => _inner.IsDirty;
+            public long UpdateCount => _inner.UpdateCount;
+
+            public LocalDrawManagerAdapter(ISceneDrawManager inner, ID3D11Device device)
+            {
+                _inner = inner;
+                _device = device;
+            }
+
+            public void UpdateFromApi(SceneDrawApi api) => _inner.UpdateFromApi(api);
+
+            public IReadOnlyCollection<ExternalObjectHandle> GetExternalObjects() => _emptyExternalObjects;
+
+            public IReadOnlyCollection<(Api.Core.SceneObjectId Id, BillboardDescriptor Desc)> GetBillboards() => _inner.GetBillboards();
+
+            public ID3D11ShaderResourceView? GetBillboardSrv(Api.Core.SceneObjectId id)
+            {
+                nint handle = _inner.GetBillboardSharedHandle(id);
+                if (handle == IntPtr.Zero)
+                {
+                    if (_localSrvs.TryGetValue(id, out var stale))
+                    {
+                        stale.Dispose();
+                        _localSrvs.Remove(id);
+                    }
+                    return null;
+                }
+
+                if (_localSrvs.TryGetValue(id, out var cached))
+                {
+                    if (cached.Handle == handle) return cached.Srv;
+                    cached.Dispose();
+                    _localSrvs.Remove(id);
+                }
+
+                try
+                {
+                    var tex = _device.OpenSharedResource<ID3D11Texture2D>(handle);
+                    var srv = _device.CreateShaderResourceView(tex);
+                    _localSrvs[id] = new LocalBillboardEntry { Handle = handle, Texture = tex, Srv = srv };
+                    return srv;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            public nint GetBillboardSharedHandle(Api.Core.SceneObjectId id) => _inner.GetBillboardSharedHandle(id);
+
+            public void PurgeStaleEntries()
+            {
+                if (_localSrvs.Count == 0) return;
+                var currentBillboards = _inner.GetBillboards();
+                _activeIds.Clear();
+                foreach (var b in currentBillboards)
+                {
+                    _activeIds.Add(b.Id);
+                }
+                _keysToRemove.Clear();
+                foreach (var key in _localSrvs.Keys)
+                {
+                    if (!_activeIds.Contains(key)) _keysToRemove.Add(key);
+                }
+                for (int i = 0; i < _keysToRemove.Count; i++)
+                {
+                    _localSrvs[_keysToRemove[i]].Dispose();
+                    _localSrvs.Remove(_keysToRemove[i]);
+                }
+            }
+
+            public void ClearDirtyFlag() { }
+
+            public void Clear() { }
+
+            public void Dispose()
+            {
+                foreach (var entry in _localSrvs.Values)
+                {
+                    entry.Dispose();
+                }
+                _localSrvs.Clear();
+            }
+        }
+
         private void UpdateConstantBuffers(ref CBPerFrame cbFrame, ref CBPerObject cbObject, ref CBPerMaterial cbMaterial)
         {
             if (_context == null || _cbPerFrame == null || _cbPerObject == null || _cbPerMaterial == null) return;
@@ -972,51 +1174,55 @@ namespace ObjLoader.Services.Rendering
 
         public void Dispose()
         {
-            lock (ObjLoaderSource.SharedRenderLock)
+            if (_isDisposed) return;
+            _isDisposed = true;
+
+            _dynamicTextureManager.Dispose();
+
+            UnregisterResizeResources();
+            ResourceTracker.Instance.Unregister(TrackingKey("GridVertexBuffer"));
+
+            _d3dResources?.Dispose();
+            _d3dResources = null;
+            _rtv?.Dispose(); _rtv = null;
+            _renderTarget?.Dispose(); _renderTarget = null;
+            _dsv?.Dispose(); _dsv = null;
+            _depthStencil?.Dispose(); _depthStencil = null;
+            _stagingTexture?.Dispose(); _stagingTexture = null;
+            _resolveTexture?.Dispose(); _resolveTexture = null;
+            _gridVertexBuffer?.Dispose(); _gridVertexBuffer = null;
+
+            _cbPerFrame?.Dispose(); _cbPerFrame = null;
+            _cbPerObject?.Dispose(); _cbPerObject = null;
+            _cbPerMaterial?.Dispose(); _cbPerMaterial = null;
+
+            _localDrawAdapter?.Dispose();
+            _localDrawAdapter = null;
+            _lastSharedDrawManager = null;
+
+            _apiObjectRenderer?.Dispose();
+            _apiObjectRenderer = null;
+
+            _cachedLayerWorlds = null;
+            _cachedLayerWvps = null;
+            _cachedLayerCapacity = 0;
+
+            _stagingBuffer = null;
+            _stagingBufferSize = 0;
+
+            lock (_bitmapLock)
             {
-                if (_isDisposed) return;
-                _isDisposed = true;
-
-                _dynamicTextureManager.Dispose();
-
-                UnregisterResizeResources();
-                ResourceTracker.Instance.Unregister(TrackingKey("GridVertexBuffer"));
-
-                _d3dResources?.Dispose();
-                _d3dResources = null;
-                _rtv?.Dispose(); _rtv = null;
-                _renderTarget?.Dispose(); _renderTarget = null;
-                _dsv?.Dispose(); _dsv = null;
-                _depthStencil?.Dispose(); _depthStencil = null;
-                _stagingTexture?.Dispose(); _stagingTexture = null;
-                _resolveTexture?.Dispose(); _resolveTexture = null;
-                _gridVertexBuffer?.Dispose(); _gridVertexBuffer = null;
-
-                _cbPerFrame?.Dispose(); _cbPerFrame = null;
-                _cbPerObject?.Dispose(); _cbPerObject = null;
-                _cbPerMaterial?.Dispose(); _cbPerMaterial = null;
-
-                _cachedLayerWorlds = null;
-                _cachedLayerWvps = null;
-                _cachedLayerCapacity = 0;
-
-                _stagingBuffer = null;
-                _stagingBufferSize = 0;
-
-                lock (_bitmapLock)
-                {
-                    SceneImage = null;
-                }
-
-                if (_context != null)
-                {
-                    _context.ClearState();
-                    _context.Flush();
-                    _context.Dispose();
-                    _context = null;
-                }
-                _device?.Dispose(); _device = null;
+                SceneImage = null;
             }
+
+            if (_context != null)
+            {
+                try { _context.ClearState(); } catch { }
+                try { _context.Flush(); } catch { }
+                _context.Dispose();
+                _context = null;
+            }
+            _device?.Dispose(); _device = null;
         }
     }
 }

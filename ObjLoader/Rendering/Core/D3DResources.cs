@@ -1,7 +1,6 @@
-﻿using ObjLoader.Rendering.Managers;
+using ObjLoader.Rendering.Managers;
 using ObjLoader.Rendering.Shaders;
 using ObjLoader.Settings;
-using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using YukkuriMovieMaker.Commons;
@@ -35,7 +34,7 @@ namespace ObjLoader.Rendering.Core
         public ID3D11ShaderResourceView WhiteTextureView { get; }
         public ID3D11Device Device => _device;
         public ID3D11SamplerState ShadowSampler { get; }
-        public ID3D11RasterizerState ShadowRasterizerState { get; }
+        public ID3D11RasterizerState ShadowRasterizerState => _rasterizerStateCache[(RenderCullMode.Front, false)];
         public bool IsDisposed => _isDisposed;
 
         public ID3D11RasterizerState CullNoneRasterizerState => _rasterizerStateCache[(RenderCullMode.None, false)];
@@ -115,9 +114,6 @@ namespace ObjLoader.Rendering.Core
 
             ShadowSampler = CreateShadowSampler(device);
             _disposer.Collect(ShadowSampler);
-
-            ShadowRasterizerState = CreateShadowRasterizerState(device);
-            _disposer.Collect(ShadowRasterizerState);
         }
 
         private void InitializeRasterizerStateCache(ID3D11Device device)
@@ -268,18 +264,6 @@ namespace ObjLoader.Rendering.Core
             return device.CreateSamplerState(shadowSampDesc);
         }
 
-        private static ID3D11RasterizerState CreateShadowRasterizerState(ID3D11Device device)
-        {
-            var shadowRasterDesc = new RasterizerDescription(CullMode.Front, FillMode.Solid)
-            {
-                DepthBias = 0,
-                SlopeScaledDepthBias = 0.0f,
-                MultisampleEnable = true,
-                AntialiasedLineEnable = true
-            };
-            return device.CreateRasterizerState(shadowRasterDesc);
-        }
-
         public void EnsureShadowMapSize(int size, bool useCascaded)
         {
             if (_isDisposed) return;
@@ -312,19 +296,18 @@ namespace ObjLoader.Rendering.Core
                 _isDisposed = true;
             }
 
-            _shadowMapManager.Dispose();
-            _environmentMapManager.Dispose();
-            _rasterizerStateCache.Clear();
-            _disposer.DisposeAndClear();
-
             try
             {
-                _device.ImmediateContext.ClearState();
                 _device.ImmediateContext.Flush();
             }
             catch
             {
             }
+
+            _shadowMapManager.Dispose();
+            _environmentMapManager.Dispose();
+            _rasterizerStateCache.Clear();
+            _disposer.DisposeAndClear();
         }
     }
 }

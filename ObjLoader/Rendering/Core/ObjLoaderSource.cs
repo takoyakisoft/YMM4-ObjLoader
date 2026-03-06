@@ -1,4 +1,4 @@
-﻿using ObjLoader.Api;
+using ObjLoader.Api;
 using ObjLoader.Api.Core;
 using ObjLoader.Cache.Gpu;
 using ObjLoader.Core.Enums;
@@ -23,6 +23,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using Vortice.Direct3D11;
+using Vortice.Mathematics;
 using YukkuriMovieMaker.Commons;
 using YukkuriMovieMaker.Player.Video;
 using D2D = Vortice.Direct2D1;
@@ -147,6 +148,12 @@ namespace ObjLoader.Rendering.Core
             _sceneDrawManager = new SceneDrawManager(_devices);
             _frameStateCache = new FrameStateCache();
 
+            if (Services.Shared.SharedResourceRegistry.SharedDevices == null)
+            {
+                Services.Shared.SharedResourceRegistry.SetSharedDevices(_devices);
+            }
+            Services.Shared.SharedResourceRegistry.RegisterDrawManager(_parameter.InstanceId, _sceneDrawManager);
+
             _resources = D3DResourcesPool.Acquire(devices.D3D.Device);
 
             _renderTargets = new RenderTargetManager();
@@ -250,6 +257,8 @@ namespace ObjLoader.Rendering.Core
 
         private void UpdateInternal(TimelineItemSourceDescription desc)
         {
+            if (_isDisposed) return;
+
             if (_sceneApi != null)
             {
                 _sceneDrawManager.UpdateFromApi(_sceneApi.DrawInternal);
@@ -806,11 +815,13 @@ namespace ObjLoader.Rendering.Core
             {
                 var context = _devices.D3D.Device.ImmediateContext;
                 context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+                context.OMSetBlendState(null, new Color4(0, 0, 0, 0), -1);
+                context.OMSetDepthStencilState(null, 0);
                 context.PSSetShaderResources(0, 4, _emptySrvArray4);
                 context.VSSetShaderResources(0, 4, _emptySrvArray4);
                 context.VSSetConstantBuffers(0, 1, _emptyBufferArray1);
                 context.PSSetConstantBuffers(0, 1, _emptyBufferArray1);
-                context.Flush();
+                context.RSSetState(null);
             }
             catch (Exception)
             {
@@ -911,6 +922,8 @@ namespace ObjLoader.Rendering.Core
 
         private unsafe GpuResourceCacheItem? CreateGpuResource(ObjModel model, string filePath)
         {
+            if (_isDisposed) return null;
+
             var device = _devices.D3D.Device;
             ID3D11Buffer? vb = null;
             ID3D11Buffer? ib = null;
@@ -1012,10 +1025,17 @@ namespace ObjLoader.Rendering.Core
                 _isDisposed = true;
             }
 
+            Services.Shared.SharedResourceRegistry.UnregisterDrawManager(_parameter.InstanceId);
+            if (!Services.Shared.SharedResourceRegistry.HasDrawManagers)
+            {
+                Services.Shared.SharedResourceRegistry.SetSharedDevices(null);
+            }
             _sceneDrawManager.Dispose();
             _shaderManager.Dispose();
             _renderTargets.Dispose();
             _skinningManager.Dispose();
+            _sceneRenderer?.Dispose();
+            _shadowRenderer?.Dispose();
             _frameStateCache?.Dispose();
 
             if (_textureService is IDisposable disposableTextureService)

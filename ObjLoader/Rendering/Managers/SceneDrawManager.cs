@@ -1,4 +1,4 @@
-﻿using ObjLoader.Api.Draw;
+using ObjLoader.Api.Draw;
 using Vortice.DCommon;
 using Vortice.Direct2D1;
 using Vortice.Direct3D11;
@@ -15,6 +15,7 @@ namespace ObjLoader.Rendering.Managers
         public ID2D1Bitmap1 D2dTarget { get; }
         public int Width { get; }
         public int Height { get; }
+        public nint SharedHandle { get; }
 
         public BillboardTextureCache(ID3D11Device device, ID2D1DeviceContext d2dContext, int width, int height)
         {
@@ -32,10 +33,13 @@ namespace ObjLoader.Rendering.Managers
                 Usage = ResourceUsage.Default,
                 BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
                 CPUAccessFlags = CpuAccessFlags.None,
-                MiscFlags = ResourceOptionFlags.None
+                MiscFlags = ResourceOptionFlags.Shared
             };
             Texture = device.CreateTexture2D(texDesc);
             Srv = device.CreateShaderResourceView(Texture);
+
+            using var dxgiResource = Texture.QueryInterface<IDXGIResource>();
+            SharedHandle = dxgiResource.SharedHandle;
 
             using var surface = Texture.QueryInterface<IDXGISurface>();
             var bitmapProps = new BitmapProperties1(
@@ -64,7 +68,10 @@ namespace ObjLoader.Rendering.Managers
         private bool _isDirty;
         private bool _isDisposed;
 
+        public event EventHandler? Updated;
+
         public bool IsDirty => _isDirty;
+        public long UpdateCount { get; private set; }
 
         public SceneDrawManager(IGraphicsDevicesAndContext devices)
         {
@@ -143,6 +150,8 @@ namespace ObjLoader.Rendering.Managers
             }
 
             _isDirty = true;
+            UpdateCount++;
+            Updated?.Invoke(this, EventArgs.Empty);
         }
 
         public IReadOnlyCollection<ExternalObjectHandle> GetExternalObjects() => _externalObjects;
@@ -153,6 +162,12 @@ namespace ObjLoader.Rendering.Managers
         {
             if (_textureCaches.TryGetValue(id, out var cache)) return cache.Srv;
             return null;
+        }
+
+        public nint GetBillboardSharedHandle(Api.Core.SceneObjectId id)
+        {
+            if (_textureCaches.TryGetValue(id, out var cache)) return cache.SharedHandle;
+            return IntPtr.Zero;
         }
 
         public void ClearDirtyFlag()

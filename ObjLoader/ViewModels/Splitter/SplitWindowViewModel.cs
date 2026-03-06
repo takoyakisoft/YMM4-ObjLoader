@@ -1,4 +1,4 @@
-﻿using ObjLoader.Localization;
+using ObjLoader.Localization;
 using ObjLoader.Settings;
 using ObjLoader.ViewModels.Settings;
 using System.Collections.ObjectModel;
@@ -102,7 +102,7 @@ namespace ObjLoader.ViewModels.Splitter
 
             _cameraService.PropertyChanged += OnCameraServicePropertyChanged;
 
-            _renderService.Initialize();
+            _renderService.Initialize(_parameter.InstanceId);
             LoadModel();
 
             _parameter.PropertyChanged += OnParameterPropertyChanged;

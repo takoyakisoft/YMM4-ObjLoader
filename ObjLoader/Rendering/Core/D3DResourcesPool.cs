@@ -1,12 +1,12 @@
-﻿using ObjLoader.Settings;
-using System.Collections.Concurrent;
+using ObjLoader.Settings;
 using Vortice.Direct3D11;
 
 namespace ObjLoader.Rendering.Core
 {
     internal sealed class D3DResourcesPool
     {
-        private static readonly ConcurrentDictionary<nint, PoolEntry> _pool = new();
+        private static readonly Dictionary<nint, PoolEntry> _pool = new();
+        private static readonly object _globalLock = new();
 
         private sealed class PoolEntry
         {
@@ -15,7 +15,6 @@ namespace ObjLoader.Rendering.Core
             public Timer? ReleaseTimer;
             public int Generation;
             public bool IsDisposed;
-            public readonly object Lock = new();
 
             public PoolEntry(D3DResources resources)
             {
@@ -27,23 +26,22 @@ namespace ObjLoader.Rendering.Core
         {
             var key = device.NativePointer;
 
-            while (true)
+            lock (_globalLock)
             {
-                var entry = _pool.GetOrAdd(key, _ => new PoolEntry(new D3DResources(device)));
-
-                lock (entry.Lock)
+                if (!_pool.TryGetValue(key, out var entry) || entry.IsDisposed)
                 {
-                    if (entry.IsDisposed)
+                    if (entry != null && entry.IsDisposed)
                     {
-                        _pool.TryRemove(key, out PoolEntry? _removed);
-                        continue;
+                        _pool.Remove(key);
                     }
-
-                    entry.RefCount++;
-                    entry.Generation++;
-                    entry.ReleaseTimer?.Dispose();
-                    entry.ReleaseTimer = null;
+                    entry = new PoolEntry(new D3DResources(device));
+                    _pool[key] = entry;
                 }
+
+                entry.RefCount++;
+                entry.Generation++;
+                entry.ReleaseTimer?.Dispose();
+                entry.ReleaseTimer = null;
 
                 return entry.Resources;
             }
@@ -52,10 +50,11 @@ namespace ObjLoader.Rendering.Core
         public static void Release(ID3D11Device device)
         {
             var key = device.NativePointer;
-            if (!_pool.TryGetValue(key, out var entry)) return;
-
-            lock (entry.Lock)
+            
+            lock (_globalLock)
             {
+                if (!_pool.TryGetValue(key, out var entry)) return;
+
                 entry.RefCount--;
                 if (entry.RefCount <= 0)
                 {
@@ -64,12 +63,12 @@ namespace ObjLoader.Rendering.Core
                     var delay = TimeSpan.FromSeconds(ModelSettings.Instance.D3DResourceReleaseDelay);
                     entry.ReleaseTimer = new Timer(_ =>
                     {
-                        lock (entry.Lock)
+                        lock (_globalLock)
                         {
                             if (entry.RefCount <= 0 && entry.Generation == gen && !entry.IsDisposed)
                             {
                                 entry.IsDisposed = true;
-                                _pool.TryRemove(key, out PoolEntry? _removed);
+                                _pool.Remove(key);
                                 entry.Resources.Dispose();
                                 entry.ReleaseTimer?.Dispose();
                                 entry.ReleaseTimer = null;
@@ -82,9 +81,9 @@ namespace ObjLoader.Rendering.Core
 
         public static void ClearAll()
         {
-            foreach (var kvp in _pool)
+            lock (_globalLock)
             {
-                lock (kvp.Value.Lock)
+                foreach (var kvp in _pool)
                 {
                     kvp.Value.ReleaseTimer?.Dispose();
                     kvp.Value.ReleaseTimer = null;
@@ -94,8 +93,8 @@ namespace ObjLoader.Rendering.Core
                         kvp.Value.Resources.Dispose();
                     }
                 }
+                _pool.Clear();
             }
-            _pool.Clear();
         }
     }
 }

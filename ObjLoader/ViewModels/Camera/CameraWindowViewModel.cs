@@ -1,4 +1,4 @@
-﻿using ObjLoader.Attributes;
+using ObjLoader.Attributes;
 using ObjLoader.Localization;
 using ObjLoader.Plugin;
 using ObjLoader.Plugin.CameraAnimation;
@@ -6,6 +6,7 @@ using ObjLoader.Rendering.Renderers;
 using ObjLoader.Services;
 using ObjLoader.Services.Camera;
 using ObjLoader.Services.Rendering;
+using ObjLoader.Rendering.Managers.Interfaces;
 using ObjLoader.Views.Windows;
 using ObjLoader.Views.Dialogs;
 using System.Collections.ObjectModel;
@@ -63,6 +64,9 @@ namespace ObjLoader.ViewModels.Camera
         private string _currentFilePath = string.Empty;
         private string _windowTitle = Texts.CameraSettings;
         private volatile bool _isDirty = true;
+        private volatile bool _isGizmoDirty = true;
+
+        private ISceneDrawManager? _subscribedDrawManager;
 
         public event EventHandler<string>? OnNotification;
 
@@ -134,109 +138,109 @@ namespace ObjLoader.ViewModels.Camera
         public bool IsTargetFree => !_isTargetFixed;
         public bool IsPilotFrameVisible => _cameraLogic.IsPilotView;
 
-        public double CamX 
-        { 
-            get => _cameraLogic.CamX; 
-            set 
-            { 
-                _cameraLogic.CamX = value; 
-                OnPropertyChanged(); 
-                UpdateRange(value, ref _camXMin, ref _camXMax, ref _camXScaleInfo, nameof(CamXMin), nameof(CamXMax), nameof(CamXScaleInfo)); 
-                if (!_isUpdatingAnimation) 
-                { 
-                    SyncToParameter(); 
-                    if (SelectedKeyframe != null) SelectedKeyframe.CamX = value; 
-                } 
-                _isDirty = true;
-            } 
+        public double CamX
+        {
+            get => _cameraLogic.CamX;
+            set
+            {
+                _cameraLogic.CamX = value;
+                OnPropertyChanged();
+                UpdateRange(value, ref _camXMin, ref _camXMax, ref _camXScaleInfo, nameof(CamXMin), nameof(CamXMax), nameof(CamXScaleInfo));
+                if (!_isUpdatingAnimation)
+                {
+                    SyncToParameter();
+                    if (SelectedKeyframe != null) SelectedKeyframe.CamX = value;
+                }
+                _isDirty = true; _isGizmoDirty = true;
+            }
         }
-        public double CamY 
-        { 
-            get => _cameraLogic.CamY; 
-            set 
-            { 
-                _cameraLogic.CamY = value; 
-                OnPropertyChanged(); 
-                UpdateRange(value, ref _camYMin, ref _camYMax, ref _camYScaleInfo, nameof(CamYMin), nameof(CamYMax), nameof(CamYScaleInfo)); 
-                if (!_isUpdatingAnimation) 
-                { 
-                    SyncToParameter(); 
-                    if (SelectedKeyframe != null) SelectedKeyframe.CamY = value; 
-                } 
-                _isDirty = true;
-            } 
+        public double CamY
+        {
+            get => _cameraLogic.CamY;
+            set
+            {
+                _cameraLogic.CamY = value;
+                OnPropertyChanged();
+                UpdateRange(value, ref _camYMin, ref _camYMax, ref _camYScaleInfo, nameof(CamYMin), nameof(CamYMax), nameof(CamYScaleInfo));
+                if (!_isUpdatingAnimation)
+                {
+                    SyncToParameter();
+                    if (SelectedKeyframe != null) SelectedKeyframe.CamY = value;
+                }
+                _isDirty = true; _isGizmoDirty = true;
+            }
         }
-        public double CamZ 
-        { 
-            get => _cameraLogic.CamZ; 
-            set 
-            { 
-                _cameraLogic.CamZ = value; 
-                OnPropertyChanged(); 
-                UpdateRange(value, ref _camZMin, ref _camZMax, ref _camZScaleInfo, nameof(CamZMin), nameof(CamZMax), nameof(CamZScaleInfo)); 
-                if (!_isUpdatingAnimation) 
-                { 
-                    SyncToParameter(); 
-                    if (SelectedKeyframe != null) SelectedKeyframe.CamZ = value; 
-                } 
-                _isDirty = true;
-            } 
+        public double CamZ
+        {
+            get => _cameraLogic.CamZ;
+            set
+            {
+                _cameraLogic.CamZ = value;
+                OnPropertyChanged();
+                UpdateRange(value, ref _camZMin, ref _camZMax, ref _camZScaleInfo, nameof(CamZMin), nameof(CamZMax), nameof(CamZScaleInfo));
+                if (!_isUpdatingAnimation)
+                {
+                    SyncToParameter();
+                    if (SelectedKeyframe != null) SelectedKeyframe.CamZ = value;
+                }
+                _isDirty = true; _isGizmoDirty = true;
+            }
         }
-        public double TargetX 
-        { 
-            get => _cameraLogic.TargetX; 
-            set 
-            { 
-                _cameraLogic.TargetX = value; 
-                OnPropertyChanged(); 
-                UpdateRange(value, ref _targetXMin, ref _targetXMax, ref _targetXScaleInfo, nameof(TargetXMin), nameof(TargetXMax), nameof(TargetXScaleInfo)); 
-                if (!_isUpdatingAnimation) 
-                { 
-                    SyncToParameter(); 
-                    if (SelectedKeyframe != null) SelectedKeyframe.TargetX = value; 
-                } 
-                _isDirty = true;
-            } 
+        public double TargetX
+        {
+            get => _cameraLogic.TargetX;
+            set
+            {
+                _cameraLogic.TargetX = value;
+                OnPropertyChanged();
+                UpdateRange(value, ref _targetXMin, ref _targetXMax, ref _targetXScaleInfo, nameof(TargetXMin), nameof(TargetXMax), nameof(TargetXScaleInfo));
+                if (!_isUpdatingAnimation)
+                {
+                    SyncToParameter();
+                    if (SelectedKeyframe != null) SelectedKeyframe.TargetX = value;
+                }
+                _isDirty = true; _isGizmoDirty = true;
+            }
         }
-        public double TargetY 
-        { 
-            get => _cameraLogic.TargetY; 
-            set 
-            { 
-                _cameraLogic.TargetY = value; 
-                OnPropertyChanged(); 
-                UpdateRange(value, ref _targetYMin, ref _targetYMax, ref _targetYScaleInfo, nameof(TargetYMin), nameof(TargetYMax), nameof(TargetYScaleInfo)); 
-                if (!_isUpdatingAnimation) 
-                { 
-                    SyncToParameter(); 
-                    if (SelectedKeyframe != null) SelectedKeyframe.TargetY = value; 
-                } 
-                _isDirty = true;
-            } 
+        public double TargetY
+        {
+            get => _cameraLogic.TargetY;
+            set
+            {
+                _cameraLogic.TargetY = value;
+                OnPropertyChanged();
+                UpdateRange(value, ref _targetYMin, ref _targetYMax, ref _targetYScaleInfo, nameof(TargetYMin), nameof(TargetYMax), nameof(TargetYScaleInfo));
+                if (!_isUpdatingAnimation)
+                {
+                    SyncToParameter();
+                    if (SelectedKeyframe != null) SelectedKeyframe.TargetY = value;
+                }
+                _isDirty = true; _isGizmoDirty = true;
+            }
         }
-        public double TargetZ 
-        { 
-            get => _cameraLogic.TargetZ; 
-            set 
-            { 
-                _cameraLogic.TargetZ = value; 
-                OnPropertyChanged(); 
-                UpdateRange(value, ref _targetZMin, ref _targetZMax, ref _targetZScaleInfo, nameof(TargetZMin), nameof(TargetZMax), nameof(TargetZScaleInfo)); 
-                if (!_isUpdatingAnimation) 
-                { 
-                    SyncToParameter(); 
-                    if (SelectedKeyframe != null) SelectedKeyframe.TargetZ = value; 
-                } 
-                _isDirty = true;
-            } 
+        public double TargetZ
+        {
+            get => _cameraLogic.TargetZ;
+            set
+            {
+                _cameraLogic.TargetZ = value;
+                OnPropertyChanged();
+                UpdateRange(value, ref _targetZMin, ref _targetZMax, ref _targetZScaleInfo, nameof(TargetZMin), nameof(TargetZMax), nameof(TargetZScaleInfo));
+                if (!_isUpdatingAnimation)
+                {
+                    SyncToParameter();
+                    if (SelectedKeyframe != null) SelectedKeyframe.TargetZ = value;
+                }
+                _isDirty = true; _isGizmoDirty = true;
+            }
         }
 
-        public double ViewCenterX { get => _cameraLogic.ViewCenterX; set { _cameraLogic.ViewCenterX = value; _isDirty = true; } }
-        public double ViewCenterY { get => _cameraLogic.ViewCenterY; set { _cameraLogic.ViewCenterY = value; _isDirty = true; } }
-        public double ViewCenterZ { get => _cameraLogic.ViewCenterZ; set { _cameraLogic.ViewCenterZ = value; _isDirty = true; } }
-        public double ViewRadius { get => _cameraLogic.ViewRadius; set { _cameraLogic.ViewRadius = value; _isDirty = true; } }
-        public double ViewTheta { get => _cameraLogic.ViewTheta; set { _cameraLogic.ViewTheta = value; _isDirty = true; } }
-        public double ViewPhi { get => _cameraLogic.ViewPhi; set { _cameraLogic.ViewPhi = value; _isDirty = true; } }
+        public double ViewCenterX { get => _cameraLogic.ViewCenterX; set { _cameraLogic.ViewCenterX = value; _isDirty = true; _isGizmoDirty = true; } }
+        public double ViewCenterY { get => _cameraLogic.ViewCenterY; set { _cameraLogic.ViewCenterY = value; _isDirty = true; _isGizmoDirty = true; } }
+        public double ViewCenterZ { get => _cameraLogic.ViewCenterZ; set { _cameraLogic.ViewCenterZ = value; _isDirty = true; _isGizmoDirty = true; } }
+        public double ViewRadius { get => _cameraLogic.ViewRadius; set { _cameraLogic.ViewRadius = value; _isDirty = true; _isGizmoDirty = true; } }
+        public double ViewTheta { get => _cameraLogic.ViewTheta; set { _cameraLogic.ViewTheta = value; _isDirty = true; _isGizmoDirty = true; } }
+        public double ViewPhi { get => _cameraLogic.ViewPhi; set { _cameraLogic.ViewPhi = value; _isDirty = true; _isGizmoDirty = true; } }
         public double ModelHeight => _sceneService.ModelHeight;
         public int ViewportHeight => _viewportHeight;
 
@@ -262,9 +266,9 @@ namespace ObjLoader.ViewModels.Camera
         public bool IsGridVisible { get => _isGridVisible; set { Set(ref _isGridVisible, value); _isDirty = true; } }
         public bool IsInfiniteGrid { get => _isInfiniteGrid; set { Set(ref _isInfiniteGrid, value); _isDirty = true; } }
         public bool IsWireframe { get => _isWireframe; set { Set(ref _isWireframe, value); _isDirty = true; } }
-        public bool IsPilotView { get => _cameraLogic.IsPilotView; set { _cameraLogic.IsPilotView = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsPilotFrameVisible)); _isDirty = true; } }
+        public bool IsPilotView { get => _cameraLogic.IsPilotView; set { _cameraLogic.IsPilotView = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsPilotFrameVisible)); _isDirty = true; _isGizmoDirty = true; } }
         public bool IsSnapping { get => _isSnapping; set => Set(ref _isSnapping, value); }
-        public bool IsTargetFixed { get => _isTargetFixed; set { if (Set(ref _isTargetFixed, value)) { OnPropertyChanged(nameof(IsTargetFree)); _isDirty = true; } } }
+        public bool IsTargetFixed { get => _isTargetFixed; set { if (Set(ref _isTargetFixed, value)) { OnPropertyChanged(nameof(IsTargetFree)); _isDirty = true; _isGizmoDirty = true; } } }
 
         public double CurrentTime
         {
@@ -343,9 +347,9 @@ namespace ObjLoader.ViewModels.Camera
             _parameter = parameter;
             _renderService = new RenderService();
             _sceneService = new SceneService(_parameter, _renderService);
-            _sceneService.OnModelLoaded = () => { _isDirty = true; };
+            _sceneService.OnModelLoaded = () => { _isDirty = true; _isGizmoDirty = true; };
             _cameraLogic = new CameraLogic();
-            _cameraLogic.Updated += () => { _isDirty = true; };
+            _cameraLogic.Updated += () => { _isDirty = true; _isGizmoDirty = true; };
             _undoStack = new UndoStack<(double, double, double, double, double, double)>();
             _animationManager = new CameraAnimationManager();
             _interactionManager = new CameraInteractionManager(this);
@@ -394,21 +398,39 @@ namespace ObjLoader.ViewModels.Camera
             if (MaxDuration <= 0) MaxDuration = 10.0;
 
             ViewCubeModel = GizmoBuilder.CreateViewCube(out _cubeFaces, out _cubeCorners);
-            _renderService.Initialize();
+            _renderService.Initialize(_parameter.InstanceId);
             _sceneService.ComputeModelScale();
             _cameraLogic.ViewRadius = _sceneService.ModelScale * 2.5;
             LoadModel();
 
+            var drawManager = Services.Shared.SharedResourceRegistry.GetDrawManager(_parameter.InstanceId);
+            if (drawManager != null)
+            {
+                _subscribedDrawManager = drawManager;
+                _subscribedDrawManager.Updated += OnDrawManagerUpdated;
+            }
+
             CompositionTarget.Rendering += OnRendering;
+        }
+
+        private void OnDrawManagerUpdated(object? sender, EventArgs e)
+        {
+            _isDirty = true;
         }
 
         partial void InitializeMenuItems();
 
         private void OnRendering(object? sender, EventArgs e)
         {
-            if (_isDirty || IsPlaying)
+            if (_isDirty || _isGizmoDirty || IsPlaying)
             {
-                UpdateVisuals();
+                if (_isGizmoDirty || IsPlaying)
+                {
+                    _cameraLogic.UpdateViewport(Camera, GizmoCamera, _sceneService.ModelHeight);
+                    UpdateSceneCameraVisual();
+                    _isGizmoDirty = false;
+                }
+                UpdateD3DScene();
                 _isDirty = false;
             }
         }
@@ -729,6 +751,7 @@ namespace ObjLoader.ViewModels.Camera
             if (height > 0) _aspectRatio = (double)width / height;
             _renderService.Resize(width, height);
             _isDirty = true;
+            _isGizmoDirty = true;
             OnPropertyChanged(nameof(SceneImage));
         }
 
@@ -932,6 +955,11 @@ namespace ObjLoader.ViewModels.Camera
         public void Dispose()
         {
             CompositionTarget.Rendering -= OnRendering;
+            if (_subscribedDrawManager != null)
+            {
+                _subscribedDrawManager.Updated -= OnDrawManagerUpdated;
+                _subscribedDrawManager = null;
+            }
             _renderService.Dispose();
             _sceneService.Dispose();
             _cameraLogic.StopAnimation();

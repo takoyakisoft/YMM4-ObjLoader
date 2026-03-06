@@ -30,6 +30,7 @@ namespace ObjLoader.Api
         private readonly TransactionApi _transactions;
         private readonly AttachmentApi _attachments;
         private readonly Func<ID2D1Image?> _forceRenderProvider;
+        private readonly ObjLoaderParameter _parameter;
         private bool _isDisposed;
 
         public ICameraApi Camera => _camera;
@@ -57,6 +58,8 @@ namespace ObjLoader.Api
             if (depthSrvProvider == null) throw new ArgumentNullException(nameof(depthSrvProvider));
             if (cameraMatrixProvider == null) throw new ArgumentNullException(nameof(cameraMatrixProvider));
 
+            _parameter = parameter;
+
             var eventApi = new SceneEventApi();
 
             _camera = new CameraApi(parameter);
@@ -73,9 +76,17 @@ namespace ObjLoader.Api
         }
 
         internal SceneDrawApi DrawInternal => _draw;
-        internal CameraApi CameraInternal => _camera;
-
         public ID2D1Image? ForceRender() => _forceRenderProvider();
+
+        public void TriggerUpdate()
+        {
+            if (!_isDisposed)
+            {
+                _parameter.ForceUpdate();
+            }
+        }
+
+        public bool IsDisposed => _isDisposed;
 
         public void Dispose()
         {

@@ -21,7 +21,8 @@ namespace ObjLoader.Api.Core
         IDepthBufferApi DepthBuffer { get; }
         IRaycastApi Raycast { get; }
         ISceneEventApi Events { get; }
-        ITransactionApi Transactions { get; }
         IAttachmentApi Attachments { get; }
+        bool IsDisposed { get; }
+        void TriggerUpdate();
     }
 }
