@@ -16,6 +16,7 @@ namespace ObjLoader.Settings
 
         private const int MaxWorlds = 20;
         private bool _isSpecularFixApplied = false;
+        private readonly Lock _worldParametersLock = new();
 
         public List<WorldParameter> WorldParameters { get; set; } = new();
 
@@ -25,25 +26,31 @@ namespace ObjLoader.Settings
         {
             get
             {
-                EnsureWorlds();
-                return WorldParameters[Math.Clamp(_worldId, 0, MaxWorlds - 1)];
+                lock (_worldParametersLock)
+                {
+                    EnsureWorlds();
+                    return WorldParameters[Math.Clamp(_worldId, 0, MaxWorlds - 1)];
+                }
             }
         }
 
         private void EnsureWorlds()
         {
-            if (WorldParameters == null) WorldParameters = new List<WorldParameter>();
+            lock (_worldParametersLock)
+            {
+                if (WorldParameters == null) WorldParameters = new List<WorldParameter>();
 
-            if (WorldParameters.Count < MaxWorlds)
-            {
-                for (int i = WorldParameters.Count; i < MaxWorlds; i++)
+                if (WorldParameters.Count < MaxWorlds)
                 {
-                    WorldParameters.Add(new WorldParameter());
+                    for (int i = WorldParameters.Count; i < MaxWorlds; i++)
+                    {
+                        WorldParameters.Add(new WorldParameter());
+                    }
                 }
-            }
-            else if (WorldParameters.Count > MaxWorlds)
-            {
-                WorldParameters.RemoveRange(MaxWorlds, WorldParameters.Count - MaxWorlds);
+                else if (WorldParameters.Count > MaxWorlds)
+                {
+                    WorldParameters.RemoveRange(MaxWorlds, WorldParameters.Count - MaxWorlds);
+                }
             }
         }
 
@@ -55,6 +62,13 @@ namespace ObjLoader.Settings
         public PluginSettingsMemento CreateMemento()
         {
             EnsureWorlds();
+            
+            List<WorldParameter> clonedWorlds;
+            lock (_worldParametersLock)
+            {
+                clonedWorlds = WorldParameters.Select(w => (WorldParameter)w.Clone()).ToList();
+            }
+
             return new PluginSettingsMemento
             {
                 CoordinateSystem = _coordinateSystem,
@@ -85,7 +99,7 @@ namespace ObjLoader.Settings
                 PhysicsParallelNarrowPhaseThreshold = _physicsParallelNarrowPhaseThreshold,
                 PhysicsWarmStartScale = _physicsWarmStartScale,
                 WorldId = _worldId,
-                WorldParameters = WorldParameters.Select(w => (WorldParameter)w.Clone()).ToList()
+                WorldParameters = clonedWorlds
             };
         }
 
@@ -123,77 +137,83 @@ namespace ObjLoader.Settings
 
             _worldId = m.WorldId;
 
-            if (m.WorldParameters != null && m.WorldParameters.Count > 0)
+            lock (_worldParametersLock)
             {
-                WorldParameters = m.WorldParameters.Select(w => (WorldParameter)w.Clone()).ToList();
-            }
-            else
-            {
-                WorldParameters = new List<WorldParameter>();
-                for (int i = 0; i < MaxWorlds; i++)
+                if (m.WorldParameters != null && m.WorldParameters.Count > 0)
                 {
-                    var w = new WorldParameter();
+                    WorldParameters = m.WorldParameters.Select(w => (WorldParameter)w.Clone()).ToList();
+                }
+                else
+                {
+                    WorldParameters = new List<WorldParameter>();
+                    for (int i = 0; i < MaxWorlds; i++)
+                    {
+                        var w = new WorldParameter();
 
-                    if (m.AmbientColors?.Count > i) w.Lighting.AmbientColor = m.AmbientColors[i];
-                    if (m.LightColors?.Count > i) w.Lighting.LightColor = m.LightColors[i];
-                    if (m.DiffuseIntensities?.Count > i) w.Lighting.DiffuseIntensity = m.DiffuseIntensities[i];
-                    if (m.SpecularIntensities?.Count > i) w.Lighting.SpecularIntensity = m.SpecularIntensities[i];
-                    if (m.Shininesses?.Count > i) w.Lighting.Shininess = m.Shininesses[i];
+                        if (m.AmbientColors?.Count > i) w.Lighting.AmbientColor = m.AmbientColors[i];
+                        if (m.LightColors?.Count > i) w.Lighting.LightColor = m.LightColors[i];
+                        if (m.DiffuseIntensities?.Count > i) w.Lighting.DiffuseIntensity = m.DiffuseIntensities[i];
+                        if (m.SpecularIntensities?.Count > i) w.Lighting.SpecularIntensity = m.SpecularIntensities[i];
+                        if (m.Shininesses?.Count > i) w.Lighting.Shininess = m.Shininesses[i];
 
-                    if (m.ToonEnabled?.Count > i) w.Toon.Enabled = m.ToonEnabled[i];
-                    if (m.ToonSteps?.Count > i) w.Toon.Steps = m.ToonSteps[i];
-                    if (m.ToonSmoothness?.Count > i) w.Toon.Smoothness = m.ToonSmoothness[i];
+                        if (m.ToonEnabled?.Count > i) w.Toon.Enabled = m.ToonEnabled[i];
+                        if (m.ToonSteps?.Count > i) w.Toon.Steps = m.ToonSteps[i];
+                        if (m.ToonSmoothness?.Count > i) w.Toon.Smoothness = m.ToonSmoothness[i];
 
-                    if (m.RimEnabled?.Count > i) w.Rim.Enabled = m.RimEnabled[i];
-                    if (m.RimColor?.Count > i) w.Rim.Color = m.RimColor[i];
-                    if (m.RimIntensity?.Count > i) w.Rim.Intensity = m.RimIntensity[i];
-                    if (m.RimPower?.Count > i) w.Rim.Power = m.RimPower[i];
+                        if (m.RimEnabled?.Count > i) w.Rim.Enabled = m.RimEnabled[i];
+                        if (m.RimColor?.Count > i) w.Rim.Color = m.RimColor[i];
+                        if (m.RimIntensity?.Count > i) w.Rim.Intensity = m.RimIntensity[i];
+                        if (m.RimPower?.Count > i) w.Rim.Power = m.RimPower[i];
 
-                    if (m.OutlineEnabled?.Count > i) w.Outline.Enabled = m.OutlineEnabled[i];
-                    if (m.OutlineColor?.Count > i) w.Outline.Color = m.OutlineColor[i];
-                    if (m.OutlineWidth?.Count > i) w.Outline.Width = m.OutlineWidth[i];
-                    if (m.OutlinePower?.Count > i) w.Outline.Power = m.OutlinePower[i];
+                        if (m.OutlineEnabled?.Count > i) w.Outline.Enabled = m.OutlineEnabled[i];
+                        if (m.OutlineColor?.Count > i) w.Outline.Color = m.OutlineColor[i];
+                        if (m.OutlineWidth?.Count > i) w.Outline.Width = m.OutlineWidth[i];
+                        if (m.OutlinePower?.Count > i) w.Outline.Power = m.OutlinePower[i];
 
-                    if (m.FogEnabled?.Count > i) w.Fog.Enabled = m.FogEnabled[i];
-                    if (m.FogColor?.Count > i) w.Fog.Color = m.FogColor[i];
-                    if (m.FogStart?.Count > i) w.Fog.Start = m.FogStart[i];
-                    if (m.FogEnd?.Count > i) w.Fog.End = m.FogEnd[i];
-                    if (m.FogDensity?.Count > i) w.Fog.Density = m.FogDensity[i];
+                        if (m.FogEnabled?.Count > i) w.Fog.Enabled = m.FogEnabled[i];
+                        if (m.FogColor?.Count > i) w.Fog.Color = m.FogColor[i];
+                        if (m.FogStart?.Count > i) w.Fog.Start = m.FogStart[i];
+                        if (m.FogEnd?.Count > i) w.Fog.End = m.FogEnd[i];
+                        if (m.FogDensity?.Count > i) w.Fog.Density = m.FogDensity[i];
 
-                    if (m.Saturation?.Count > i) w.PostEffect.Saturation = m.Saturation[i];
-                    if (m.Contrast?.Count > i) w.PostEffect.Contrast = m.Contrast[i];
-                    if (m.Gamma?.Count > i) w.PostEffect.Gamma = m.Gamma[i];
-                    if (m.BrightnessPost?.Count > i) w.PostEffect.BrightnessPost = m.BrightnessPost[i];
+                        if (m.Saturation?.Count > i) w.PostEffect.Saturation = m.Saturation[i];
+                        if (m.Contrast?.Count > i) w.PostEffect.Contrast = m.Contrast[i];
+                        if (m.Gamma?.Count > i) w.PostEffect.Gamma = m.Gamma[i];
+                        if (m.BrightnessPost?.Count > i) w.PostEffect.BrightnessPost = m.BrightnessPost[i];
 
-                    if (m.VignetteEnabled?.Count > i) w.Vignette.Enabled = m.VignetteEnabled[i];
-                    if (m.VignetteColor?.Count > i) w.Vignette.Color = m.VignetteColor[i];
-                    if (m.VignetteIntensity?.Count > i) w.Vignette.Intensity = m.VignetteIntensity[i];
-                    if (m.VignetteRadius?.Count > i) w.Vignette.Radius = m.VignetteRadius[i];
-                    if (m.VignetteSoftness?.Count > i) w.Vignette.Softness = m.VignetteSoftness[i];
+                        if (m.VignetteEnabled?.Count > i) w.Vignette.Enabled = m.VignetteEnabled[i];
+                        if (m.VignetteColor?.Count > i) w.Vignette.Color = m.VignetteColor[i];
+                        if (m.VignetteIntensity?.Count > i) w.Vignette.Intensity = m.VignetteIntensity[i];
+                        if (m.VignetteRadius?.Count > i) w.Vignette.Radius = m.VignetteRadius[i];
+                        if (m.VignetteSoftness?.Count > i) w.Vignette.Softness = m.VignetteSoftness[i];
 
-                    if (m.ScanlineEnabled?.Count > i) w.Scanline.Enabled = m.ScanlineEnabled[i];
-                    if (m.ScanlineIntensity?.Count > i) w.Scanline.Intensity = m.ScanlineIntensity[i];
-                    if (m.ScanlineFrequency?.Count > i) w.Scanline.Frequency = m.ScanlineFrequency[i];
-                    if (m.ScanlinePost?.Count > i) w.Scanline.ApplyAfterTonemap = m.ScanlinePost[i];
+                        if (m.ScanlineEnabled?.Count > i) w.Scanline.Enabled = m.ScanlineEnabled[i];
+                        if (m.ScanlineIntensity?.Count > i) w.Scanline.Intensity = m.ScanlineIntensity[i];
+                        if (m.ScanlineFrequency?.Count > i) w.Scanline.Frequency = m.ScanlineFrequency[i];
+                        if (m.ScanlinePost?.Count > i) w.Scanline.ApplyAfterTonemap = m.ScanlinePost[i];
 
-                    if (m.ChromAbEnabled?.Count > i) w.Artistic.ChromAbEnabled = m.ChromAbEnabled[i];
-                    if (m.ChromAbIntensity?.Count > i) w.Artistic.ChromAbIntensity = m.ChromAbIntensity[i];
-                    if (m.MonochromeEnabled?.Count > i) w.Artistic.MonochromeEnabled = m.MonochromeEnabled[i];
-                    if (m.MonochromeColor?.Count > i) w.Artistic.MonochromeColor = m.MonochromeColor[i];
-                    if (m.MonochromeMix?.Count > i) w.Artistic.MonochromeMix = m.MonochromeMix[i];
-                    if (m.PosterizeEnabled?.Count > i) w.Artistic.PosterizeEnabled = m.PosterizeEnabled[i];
-                    if (m.PosterizeLevels?.Count > i) w.Artistic.PosterizeLevels = m.PosterizeLevels[i];
+                        if (m.ChromAbEnabled?.Count > i) w.Artistic.ChromAbEnabled = m.ChromAbEnabled[i];
+                        if (m.ChromAbIntensity?.Count > i) w.Artistic.ChromAbIntensity = m.ChromAbIntensity[i];
+                        if (m.MonochromeEnabled?.Count > i) w.Artistic.MonochromeEnabled = m.MonochromeEnabled[i];
+                        if (m.MonochromeColor?.Count > i) w.Artistic.MonochromeColor = m.MonochromeColor[i];
+                        if (m.MonochromeMix?.Count > i) w.Artistic.MonochromeMix = m.MonochromeMix[i];
+                        if (m.PosterizeEnabled?.Count > i) w.Artistic.PosterizeEnabled = m.PosterizeEnabled[i];
+                        if (m.PosterizeLevels?.Count > i) w.Artistic.PosterizeLevels = m.PosterizeLevels[i];
 
-                    WorldParameters.Add(w);
+                        WorldParameters.Add(w);
+                    }
                 }
             }
             EnsureWorlds();
 
             if (!_isSpecularFixApplied)
             {
-                foreach (var w in WorldParameters)
+                lock (_worldParametersLock)
                 {
-                    w.Lighting.SpecularIntensity = 1.0;
+                    foreach (var w in WorldParameters)
+                    {
+                        w.Lighting.SpecularIntensity = 1.0;
+                    }
                 }
                 _isSpecularFixApplied = true;
             }
@@ -203,8 +223,11 @@ namespace ObjLoader.Settings
 
         public WorldParameter GetWorld(int id)
         {
-            EnsureWorlds();
-            return WorldParameters[Math.Clamp(id, 0, MaxWorlds - 1)];
+            lock (_worldParametersLock)
+            {
+                EnsureWorlds();
+                return WorldParameters[Math.Clamp(id, 0, MaxWorlds - 1)];
+            }
         }
 
         public Color GetAmbientColor(int id) => GetWorld(id).Lighting.AmbientColor;
@@ -304,7 +327,10 @@ namespace ObjLoader.Settings
             PhysicsParallelNarrowPhaseThreshold = 16;
             PhysicsWarmStartScale = 0.85;
 
-            WorldParameters = new List<WorldParameter>();
+            lock (_worldParametersLock)
+            {
+                WorldParameters = new List<WorldParameter>();
+            }
             EnsureWorlds();
 
             OnPropertyChanged(string.Empty);
