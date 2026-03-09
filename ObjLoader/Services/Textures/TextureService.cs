@@ -10,13 +10,17 @@ namespace ObjLoader.Services.Textures
 {
     public sealed class TextureService : ITextureService
     {
-        private static readonly ConcurrentDictionary<string, TextureRawData> s_rawDataCache = new();
-        private static readonly ConcurrentDictionary<(nint DevicePtr, string Path), ID3D11Texture2D> s_gpuTextureCache = new();
-        private static readonly ConcurrentDictionary<(nint DevicePtr, string Path), long> s_gpuTextureSizes = new();
+        public static long RawCacheMaxBytes = 512L * 1024 * 1024;
+        public static long GpuCacheMaxBytes = 1024L * 1024 * 1024;
+
+        private static readonly BoundedLruCache<string, TextureRawData> s_rawDataCache
+            = new(RawCacheMaxBytes);
+        private static readonly BoundedLruCache<(nint DevicePtr, string Path), ID3D11Texture2D> s_gpuTextureCache
+            = new(GpuCacheMaxBytes);
         private static readonly ConcurrentDictionary<nint, int> s_deviceRefCounts = new();
 
-        private readonly List<ITextureLoader> _loaders = new List<ITextureLoader>();
-        private readonly HashSet<nint> _trackedDevices = new();
+        private readonly List<ITextureLoader> _loaders = [];
+        private readonly HashSet<nint> _trackedDevices = [];
         private readonly Lock _lock = new();
         private bool _disposed;
 
@@ -48,8 +52,7 @@ namespace ObjLoader.Services.Textures
 
         public void RegisterLoader(ITextureLoader loader)
         {
-            if (loader == null) throw new ArgumentNullException(nameof(loader));
-
+            ArgumentNullException.ThrowIfNull(loader);
             lock (_lock)
             {
                 if (_disposed) throw new ObjectDisposedException(nameof(TextureService));
@@ -115,7 +118,6 @@ namespace ObjLoader.Services.Textures
                     {
                         SafeDisposeCom(stale);
                     }
-                    s_gpuTextureSizes.TryRemove(key, out _);
                 }
             }
 
@@ -150,20 +152,14 @@ namespace ObjLoader.Services.Textures
                 var data = new SubresourceData(p, stride);
                 var tex = device.CreateTexture2D(texDesc, new[] { data });
 
-                if (s_gpuTextureCache.TryAdd(key, tex))
-                {
-                    s_gpuTextureSizes.TryAdd(key, gpuBytes);
-                    var srv = device.CreateShaderResourceView(tex);
-                    return (srv, gpuBytes);
-                }
+                var cached = s_gpuTextureCache.GetOrAdd(key, gpuBytes, _ => tex);
 
-                tex.Dispose();
-
-                if (s_gpuTextureCache.TryGetValue(key, out var existing))
+                if (!ReferenceEquals(cached, tex))
                 {
+                    tex.Dispose();
                     try
                     {
-                        var srv = device.CreateShaderResourceView(existing);
+                        var srv = device.CreateShaderResourceView(cached);
                         return (srv, 0);
                     }
                     catch
@@ -172,11 +168,23 @@ namespace ObjLoader.Services.Textures
                         {
                             SafeDisposeCom(stale);
                         }
-                        s_gpuTextureSizes.TryRemove(key, out _);
+                        return (null, 0);
                     }
                 }
 
-                return (null, 0);
+                try
+                {
+                    var srv = device.CreateShaderResourceView(tex);
+                    return (srv, gpuBytes);
+                }
+                catch
+                {
+                    if (s_gpuTextureCache.TryRemove(key, out var stale))
+                    {
+                        SafeDisposeCom(stale);
+                    }
+                    return (null, 0);
+                }
             }
         }
 
@@ -200,30 +208,22 @@ namespace ObjLoader.Services.Textures
 
         private TextureRawData DecodeAndCacheRaw(string path, ITextureLoader loader)
         {
-            if (s_rawDataCache.TryGetValue(path, out var existing))
-            {
-                return existing;
-            }
-
             using var pooled = loader.LoadRaw(path);
             var persistent = pooled.ToNonPooled();
 
-            if (s_rawDataCache.TryAdd(path, persistent))
+            long bytes = persistent.DataLength;
+            var result = s_rawDataCache.GetOrAdd(path, bytes, _ => persistent);
+
+            if (!ReferenceEquals(result, persistent))
             {
-                return persistent;
+                persistent.Dispose();
             }
 
-            persistent.Dispose();
-            return s_rawDataCache[path];
+            return result;
         }
 
         private TextureRawData? DecodeAndCacheFromBitmap(string path, ITextureLoader loader)
         {
-            if (s_rawDataCache.TryGetValue(path, out var existing))
-            {
-                return existing;
-            }
-
             BitmapSource bitmapSource;
             try
             {
@@ -242,26 +242,27 @@ namespace ObjLoader.Services.Textures
             int stride = width * 4;
             int requiredSize = stride * height;
 
-            byte[] pooled = ArrayPool<byte>.Shared.Rent(requiredSize);
+            byte[] pooledBuf = ArrayPool<byte>.Shared.Rent(requiredSize);
             try
             {
-                converted.CopyPixels(pooled, stride, 0);
+                converted.CopyPixels(pooledBuf, stride, 0);
 
                 var pixels = new byte[requiredSize];
-                Buffer.BlockCopy(pooled, 0, pixels, 0, requiredSize);
+                Buffer.BlockCopy(pooledBuf, 0, pixels, 0, requiredSize);
                 var rawData = new TextureRawData(pixels, width, height);
 
-                if (s_rawDataCache.TryAdd(path, rawData))
+                var result = s_rawDataCache.GetOrAdd(path, requiredSize, _ => rawData);
+
+                if (!ReferenceEquals(result, rawData))
                 {
-                    return rawData;
+                    rawData.Dispose();
                 }
 
-                rawData.Dispose();
-                return s_rawDataCache[path];
+                return result;
             }
             finally
             {
-                ArrayPool<byte>.Shared.Return(pooled);
+                ArrayPool<byte>.Shared.Return(pooledBuf);
             }
         }
 
@@ -288,17 +289,10 @@ namespace ObjLoader.Services.Textures
 
         public static void EvictDevice(nint devicePtr)
         {
-            var keysToRemove = s_gpuTextureCache.Keys
-                .Where(k => k.DevicePtr == devicePtr)
-                .ToArray();
-
-            foreach (var key in keysToRemove)
+            var removed = s_gpuTextureCache.RemoveWhere(k => k.DevicePtr == devicePtr);
+            foreach (var (_, tex) in removed)
             {
-                if (s_gpuTextureCache.TryRemove(key, out var tex))
-                {
-                    SafeDisposeCom(tex);
-                }
-                s_gpuTextureSizes.TryRemove(key, out _);
+                SafeDisposeCom(tex);
             }
         }
 
@@ -307,17 +301,10 @@ namespace ObjLoader.Services.Textures
             if (string.IsNullOrEmpty(path)) return;
             path = System.IO.Path.GetFullPath(path).ToLowerInvariant();
 
-            var keysToRemove = s_gpuTextureCache.Keys
-                .Where(k => k.Path == path)
-                .ToArray();
-
-            foreach (var key in keysToRemove)
+            var removed = s_gpuTextureCache.RemoveWhere(k => k.Path == path);
+            foreach (var (_, tex) in removed)
             {
-                if (s_gpuTextureCache.TryRemove(key, out var tex))
-                {
-                    SafeDisposeCom(tex);
-                }
-                s_gpuTextureSizes.TryRemove(key, out _);
+                SafeDisposeCom(tex);
             }
 
             if (s_rawDataCache.TryRemove(path, out var raw))
@@ -328,24 +315,17 @@ namespace ObjLoader.Services.Textures
 
         public static void ClearAllCaches()
         {
-            foreach (var entry in s_gpuTextureCache)
+            var gpuEntries = s_gpuTextureCache.DrainAll();
+            foreach (var (_, tex) in gpuEntries)
             {
-                SafeDisposeCom(entry.Value);
+                SafeDisposeCom(tex);
             }
-            s_gpuTextureCache.Clear();
-            s_gpuTextureSizes.Clear();
 
-            foreach (var entry in s_rawDataCache)
+            var rawEntries = s_rawDataCache.DrainAll();
+            foreach (var (_, raw) in rawEntries)
             {
-                try
-                {
-                    entry.Value?.Dispose();
-                }
-                catch
-                {
-                }
+                try { raw?.Dispose(); } catch { }
             }
-            s_rawDataCache.Clear();
         }
 
         public void Dispose()
@@ -381,13 +361,7 @@ namespace ObjLoader.Services.Textures
             {
                 if (loader is IDisposable disposable)
                 {
-                    try
-                    {
-                        disposable.Dispose();
-                    }
-                    catch
-                    {
-                    }
+                    try { disposable.Dispose(); } catch { }
                 }
             }
         }
@@ -395,13 +369,7 @@ namespace ObjLoader.Services.Textures
         private static void SafeDisposeCom(IDisposable? disposable)
         {
             if (disposable == null) return;
-            try
-            {
-                disposable.Dispose();
-            }
-            catch
-            {
-            }
+            try { disposable.Dispose(); } catch { }
         }
     }
 }
