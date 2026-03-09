@@ -1,13 +1,19 @@
 ﻿using System.Numerics;
+using System.Runtime.CompilerServices;
 
-namespace ObjLoader.Systems.Models
+namespace ObjLoader.Systems.Models;
+
+[InlineArray(64)]
+public struct GenericInterpolation64
 {
-    public class GenericBoneFrame
-    {
-        public string BoneName { get; set; } = string.Empty;
-        public uint FrameNumber { get; set; }
-        public Vector3 Position { get; set; }
-        public Quaternion Rotation { get; set; }
-        public byte[] Interpolation { get; set; } = System.Array.Empty<byte>();
-    }
+    private byte _element0;
+}
+
+public struct GenericBoneFrame
+{
+    public string BoneName;
+    public uint FrameNumber;
+    public Vector3 Position;
+    public Quaternion Rotation;
+    public GenericInterpolation64 Interpolation;
 }

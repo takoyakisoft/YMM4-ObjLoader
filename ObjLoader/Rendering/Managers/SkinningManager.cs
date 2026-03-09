@@ -5,7 +5,6 @@ using ObjLoader.Rendering.Core;
 using ObjLoader.Rendering.Managers.Interfaces;
 using ObjLoader.Rendering.Processors;
 using ObjLoader.Services.Mmd.Animation;
-using System.IO;
 using System.Runtime.CompilerServices;
 using Vortice.Direct3D11;
 
@@ -14,6 +13,7 @@ namespace ObjLoader.Rendering.Managers
     public sealed class SkinningManager : ISkinningManager
     {
         private readonly Dictionary<string, SkinningState> _skinningStates = new Dictionary<string, SkinningState>();
+        private readonly List<string> _staleGuidsBuffer = new List<string>();
         private readonly ID3D11Device _device;
 
         public SkinningManager(ID3D11Device device)
@@ -43,6 +43,19 @@ namespace ObjLoader.Rendering.Managers
             }
         }
 
+        public void CleanupStaleStates(HashSet<string> activeGuids)
+        {
+            if (_skinningStates.Count == 0) return;
+            _staleGuidsBuffer.Clear();
+            foreach (var key in _skinningStates.Keys)
+            {
+                if (!activeGuids.Contains(key))
+                    _staleGuidsBuffer.Add(key);
+            }
+            foreach (var key in _staleGuidsBuffer)
+                RemoveSkinningState(key);
+        }
+
         public ID3D11Buffer? GetOverrideVertexBuffer(string guid)
         {
             if (_skinningStates.TryGetValue(guid, out var state))
@@ -56,7 +69,6 @@ namespace ObjLoader.Rendering.Managers
         {
             if (animator == null || !filePath.EndsWith(".pmx", StringComparison.OrdinalIgnoreCase))
             {
-                RemoveSkinningState(guid);
                 return;
             }
 
@@ -104,9 +116,9 @@ namespace ObjLoader.Rendering.Managers
 
         private unsafe void ApplySkinningToResource(BoneAnimator animator, SkinningState skinState, double currentTime)
         {
+            var boneTransforms = animator.ComputeBoneTransforms(currentTime);
             try
             {
-                var boneTransforms = animator.ComputeBoneTransforms(currentTime);
                 var device = _device;
                 var context = device.ImmediateContext;
 
@@ -144,40 +156,51 @@ namespace ObjLoader.Rendering.Managers
                 }
 
                 var skinnedVerts = VmdMotionApplier.ApplySkinning(skinState.OriginalVertices, skinState.BoneWeights, boneTransforms);
-
-                int requiredSize = skinnedVerts.Length * Unsafe.SizeOf<ObjVertex>();
-
-                if (skinState.UseGpuSkinning)
+                try
                 {
-                    skinState.DynamicVB = null;
-                    skinState.UseGpuSkinning = false;
-                }
+                    int originalLength = skinState.OriginalVertices.Length;
+                    int requiredSize = originalLength * Unsafe.SizeOf<ObjVertex>();
 
-                if (skinState.DynamicVB != null)
-                {
-                    var existingDesc = skinState.DynamicVB.Description;
-                    if (existingDesc.ByteWidth != requiredSize)
+                    if (skinState.UseGpuSkinning)
                     {
-                        skinState.DynamicVB.Dispose();
                         skinState.DynamicVB = null;
+                        skinState.UseGpuSkinning = false;
                     }
-                }
 
-                if (skinState.DynamicVB == null)
-                {
-                    var desc = new BufferDescription(requiredSize, BindFlags.VertexBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write);
-                    skinState.DynamicVB = device.CreateBuffer(desc);
-                }
+                    if (skinState.DynamicVB != null)
+                    {
+                        var existingDesc = skinState.DynamicVB.Description;
+                        if (existingDesc.ByteWidth != requiredSize)
+                        {
+                            skinState.DynamicVB.Dispose();
+                            skinState.DynamicVB = null;
+                        }
+                    }
 
-                var mapped = context.Map(skinState.DynamicVB, MapMode.WriteDiscard);
-                fixed (ObjVertex* pVerts = skinnedVerts)
-                {
-                    Buffer.MemoryCopy(pVerts, (void*)mapped.DataPointer, mapped.RowPitch, requiredSize);
+                    if (skinState.DynamicVB == null)
+                    {
+                        var desc = new BufferDescription(requiredSize, BindFlags.VertexBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write);
+                        skinState.DynamicVB = device.CreateBuffer(desc);
+                    }
+
+                    var mapped = context.Map(skinState.DynamicVB, MapMode.WriteDiscard);
+                    fixed (ObjVertex* pVerts = skinnedVerts)
+                    {
+                        Buffer.MemoryCopy(pVerts, (void*)mapped.DataPointer, mapped.RowPitch, requiredSize);
+                    }
+                    context.Unmap(skinState.DynamicVB, 0);
                 }
-                context.Unmap(skinState.DynamicVB, 0);
+                finally
+                {
+                    System.Buffers.ArrayPool<ObjVertex>.Shared.Return(skinnedVerts);
+                }
             }
             catch (Exception)
             {
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<System.Numerics.Matrix4x4>.Shared.Return(boneTransforms);
             }
         }
 

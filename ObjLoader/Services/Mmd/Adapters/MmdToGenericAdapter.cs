@@ -1,6 +1,7 @@
 ﻿using ObjLoader.Core.Mmd;
 using ObjLoader.Services.Mmd.Parsers;
 using ObjLoader.Systems.Models;
+using System.Runtime.InteropServices;
 
 namespace ObjLoader.Services.Mmd.Adapters
 {
@@ -26,14 +27,16 @@ namespace ObjLoader.Services.Mmd.Adapters
             var result = new List<GenericBoneFrame>(source.Count);
             foreach (var f in source)
             {
-                result.Add(new GenericBoneFrame
+                var frame = new GenericBoneFrame
                 {
                     BoneName = f.BoneName,
                     FrameNumber = f.FrameNumber,
                     Position = f.Position,
-                    Rotation = f.Rotation,
-                    Interpolation = f.Interpolation
-                });
+                    Rotation = f.Rotation
+                };
+                MemoryMarshal.AsBytes(new ReadOnlySpan<Interpolation64>(in f.Interpolation))
+                    .CopyTo(MemoryMarshal.AsBytes(new Span<GenericInterpolation64>(ref frame.Interpolation)));
+                result.Add(frame);
             }
             return result;
         }

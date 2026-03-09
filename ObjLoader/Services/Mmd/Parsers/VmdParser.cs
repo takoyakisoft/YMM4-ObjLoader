@@ -1,6 +1,7 @@
 using System.IO;
 using System.Numerics;
 using System.Text;
+using System.Runtime.InteropServices;
 
 namespace ObjLoader.Services.Mmd.Parsers
 {
@@ -48,7 +49,9 @@ namespace ObjLoader.Services.Mmd.Parsers
                 float rz = br.ReadSingle();
                 float rw = br.ReadSingle();
 
-                byte[] interpolation = br.ReadBytes(64);
+                byte[] interpolationBytes = br.ReadBytes(64);
+                Interpolation64 interpolation = default;
+                interpolationBytes.AsSpan().CopyTo(MemoryMarshal.AsBytes(new Span<Interpolation64>(ref interpolation)));
 
                 data.BoneFrames.Add(new VmdBoneFrame
                 {
@@ -97,7 +100,9 @@ namespace ObjLoader.Services.Mmd.Parsers
                 float cry = br.ReadSingle();
                 float crz = br.ReadSingle();
 
-                byte[] interpolation = br.ReadBytes(24);
+                byte[] interpolationBytes = br.ReadBytes(24);
+                Interpolation24 interpolation = default;
+                interpolationBytes.AsSpan().CopyTo(MemoryMarshal.AsBytes(new Span<Interpolation24>(ref interpolation)));
 
                 uint viewAngle = br.ReadUInt32();
                 byte perspective = br.ReadByte();

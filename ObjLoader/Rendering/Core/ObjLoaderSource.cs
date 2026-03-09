@@ -67,6 +67,7 @@ namespace ObjLoader.Rendering.Core
         private bool _lastShadowEnabled;
 
         private Dictionary<string, LayerState> _layerStates = new Dictionary<string, LayerState>();
+        private readonly HashSet<string> _activeSkinningGuids = new HashSet<string>();
 
         private ObjLoaderSceneApi? _sceneApi;
         private Guid _registrationToken;
@@ -595,6 +596,7 @@ namespace ObjLoader.Rendering.Core
                 if (effectiveVisibility && !string.IsNullOrEmpty(layerState.FilePath))
                 {
                     GpuResourceCacheItem? resource = null;
+                    ObjModel? loadedModel = null;
                     if (GpuResourceCache.Instance.TryGetValue(layerState.CacheKey, out var cached))
                     {
                         if (cached != null && cached.Device == _devices.D3D.Device)
@@ -605,15 +607,10 @@ namespace ObjLoader.Rendering.Core
 
                     if (resource == null)
                     {
-                        var model = _loader.Load(layerState.FilePath);
-                        if (model.Vertices.Length > 0)
+                        loadedModel = _loader.Load(layerState.FilePath);
+                        if (loadedModel.Vertices.Length > 0)
                         {
-                            resource = CreateGpuResource(model, layerState.FilePath);
-
-                            if (model.BoneWeights != null && model.Bones.Count > 0)
-                            {
-                                _skinningManager.RegisterSkinningState(item.Guid, layerState.FilePath, model.Vertices.ToArray(), model.BoneWeights);
-                            }
+                            resource = CreateGpuResource(loadedModel, layerState.FilePath);
                         }
                     }
 
@@ -627,14 +624,14 @@ namespace ObjLoader.Rendering.Core
                                 item.Data.VmdMotionData = vmdData;
                                 if (vmdData.BoneFrames.Count > 0 && Path.GetExtension(layerState.FilePath).Equals(".pmx", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    var pmxModel = new PmxParser().Parse(layerState.FilePath);
-                                    if (pmxModel.Vertices != null && pmxModel.BoneWeights != null)
+                                    loadedModel ??= _loader.Load(layerState.FilePath);
+                                    if (loadedModel.BoneWeights != null)
                                     {
-                                        _skinningManager.RegisterSkinningState(item.Guid, layerState.FilePath, [.. pmxModel.Vertices], pmxModel.BoneWeights);
+                                        _skinningManager.RegisterSkinningState(item.Guid, layerState.FilePath, loadedModel.Vertices, loadedModel.BoneWeights);
                                     }
-                                    if (pmxModel.Bones.Count > 0)
+                                    if (loadedModel.Bones.Count > 0)
                                     {
-                                        item.Data.BoneAnimatorInstance = new BoneAnimator(pmxModel.Bones, vmdData.BoneFrames, pmxModel.RigidBodies, pmxModel.Joints);
+                                        item.Data.BoneAnimatorInstance = new BoneAnimator(loadedModel.Bones, vmdData.BoneFrames, loadedModel.RigidBodies, loadedModel.Joints);
                                     }
                                 }
                             }
@@ -648,12 +645,17 @@ namespace ObjLoader.Rendering.Core
 
                         _skinningManager.ProcessSkinning(item.Guid, layerState.FilePath, item.Data.BoneAnimatorInstance, motionTime);
 
+                        if (layerState.FilePath.EndsWith(".pmx", StringComparison.OrdinalIgnoreCase))
+                            _activeSkinningGuids.Add(item.Guid);
+
                         ID3D11Buffer? overrideVB = _skinningManager.GetOverrideVertexBuffer(item.Guid);
 
                         _layersToRender.Add((item.Data, resource, layerState, overrideVB));
                     }
                 }
             }
+            _skinningManager.CleanupStaleStates(_activeSkinningGuids);
+            _activeSkinningGuids.Clear();
             PrepareDynamicTextures(_layersToRender);
         }
 

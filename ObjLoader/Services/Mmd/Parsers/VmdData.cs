@@ -1,39 +1,51 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
-namespace ObjLoader.Services.Mmd.Parsers
+namespace ObjLoader.Services.Mmd.Parsers;
+
+[InlineArray(64)]
+public struct Interpolation64
 {
-    public class VmdData
-    {
-        public string ModelName { get; set; } = string.Empty;
-        public List<VmdBoneFrame> BoneFrames { get; set; } = new List<VmdBoneFrame>();
-        public List<VmdMorphFrame> MorphFrames { get; set; } = new List<VmdMorphFrame>();
-        public List<VmdCameraFrame> CameraFrames { get; set; } = new List<VmdCameraFrame>();
-    }
+    private byte _element0;
+}
 
-    public class VmdBoneFrame
-    {
-        public string BoneName { get; set; } = string.Empty;
-        public uint FrameNumber { get; set; }
-        public Vector3 Position { get; set; }
-        public Quaternion Rotation { get; set; }
-        public byte[] Interpolation { get; set; } = Array.Empty<byte>();
-    }
+[InlineArray(24)]
+public struct Interpolation24
+{
+    private byte _element0;
+}
 
-    public class VmdMorphFrame
-    {
-        public string MorphName { get; set; } = string.Empty;
-        public uint FrameNumber { get; set; }
-        public float Weight { get; set; }
-    }
+public class VmdData
+{
+    public string ModelName { get; set; } = string.Empty;
+    public List<VmdBoneFrame> BoneFrames { get; set; } = new List<VmdBoneFrame>();
+    public List<VmdMorphFrame> MorphFrames { get; set; } = new List<VmdMorphFrame>();
+    public List<VmdCameraFrame> CameraFrames { get; set; } = new List<VmdCameraFrame>();
+}
 
-    public class VmdCameraFrame
-    {
-        public uint FrameNumber { get; set; }
-        public float Distance { get; set; }
-        public Vector3 Position { get; set; }
-        public Vector3 Rotation { get; set; }
-        public byte[] Interpolation { get; set; } = Array.Empty<byte>();
-        public uint ViewAngle { get; set; }
-        public bool IsOrthographic { get; set; }
-    }
+public struct VmdBoneFrame
+{
+    public string BoneName;
+    public uint FrameNumber;
+    public Vector3 Position;
+    public Quaternion Rotation;
+    public Interpolation64 Interpolation;
+}
+
+public struct VmdMorphFrame
+{
+    public string MorphName;
+    public uint FrameNumber;
+    public float Weight;
+}
+
+public struct VmdCameraFrame
+{
+    public uint FrameNumber;
+    public float Distance;
+    public Vector3 Position;
+    public Vector3 Rotation;
+    public Interpolation24 Interpolation;
+    public uint ViewAngle;
+    public bool IsOrthographic;
 }

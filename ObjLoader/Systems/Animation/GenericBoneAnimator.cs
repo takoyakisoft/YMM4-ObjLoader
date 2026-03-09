@@ -16,9 +16,6 @@ namespace ObjLoader.Systems.Animation
         private double _lastTime = double.NaN;
         private bool _physicsInitialized;
 
-        private readonly Matrix4x4[] _localTransforms;
-        private readonly Matrix4x4[] _globalTransforms;
-        private readonly Matrix4x4[] _result;
         private readonly int[] _evalOrder;
 
         public GenericBoneAnimator(List<GenericBone> bones, List<GenericBoneFrame> boneFrames, IPhysicsEngine? physics = null)
@@ -31,9 +28,6 @@ namespace ObjLoader.Systems.Animation
             if (boneFrames == null)
             {
                 _inverseBindPose = Array.Empty<Matrix4x4>();
-                _localTransforms = Array.Empty<Matrix4x4>();
-                _globalTransforms = Array.Empty<Matrix4x4>();
-                _result = Array.Empty<Matrix4x4>();
                 _evalOrder = Array.Empty<int>();
                 return;
             }
@@ -59,9 +53,6 @@ namespace ObjLoader.Systems.Animation
                 _inverseBindPose[i] = Matrix4x4.CreateTranslation(-_bones[i].Position);
             }
 
-            _localTransforms = new Matrix4x4[boneCount];
-            _globalTransforms = new Matrix4x4[boneCount];
-            _result = new Matrix4x4[boneCount];
             _evalOrder = new int[boneCount];
 
             int[] state = new int[boneCount];
@@ -99,113 +90,124 @@ namespace ObjLoader.Systems.Animation
             uint frame = (uint)(timeSeconds * 30.0);
             float subFrame = (float)(timeSeconds * 30.0 - frame);
 
-            for (int i = 0; i < boneCount; i++)
-            {
-                var bone = _bones[i];
-                Vector3 translation = Vector3.Zero;
-                Quaternion rotation = Quaternion.Identity;
+            var localTransforms = System.Buffers.ArrayPool<Matrix4x4>.Shared.Rent(boneCount);
+            var globalTransforms = System.Buffers.ArrayPool<Matrix4x4>.Shared.Rent(boneCount);
+            var result = System.Buffers.ArrayPool<Matrix4x4>.Shared.Rent(boneCount);
 
-                if (_framesByBone.TryGetValue(bone.Name, out var frames) && frames.Count > 0)
-                {
-                    InterpolateFrame(frames, frame, subFrame, out translation, out rotation);
-                }
-
-                Vector3 boneOffset;
-                if (bone.ParentIndex >= 0 && bone.ParentIndex < boneCount)
-                    boneOffset = bone.Position - _bones[bone.ParentIndex].Position;
-                else
-                    boneOffset = bone.Position;
-
-                _localTransforms[i] =
-                    Matrix4x4.CreateFromQuaternion(rotation) *
-                    Matrix4x4.CreateTranslation(translation + boneOffset);
-            }
-
-            fixed (int* pOrder = _evalOrder)
-            fixed (Matrix4x4* pLocal = _localTransforms)
-            fixed (Matrix4x4* pGlobal = _globalTransforms)
-            {
-                for (int k = 0; k < boneCount; k++)
-                {
-                    int i = pOrder[k];
-                    int parent = _bones[i].ParentIndex;
-                    if (parent >= 0 && parent < boneCount)
-                        pGlobal[i] = pLocal[i] * pGlobal[parent];
-                    else
-                        pGlobal[i] = pLocal[i];
-                }
-            }
-
-            if (_physics != null)
-            {
-                double rawDt = double.IsNaN(_lastTime) ? 0.0 : timeSeconds - _lastTime;
-
-                if (!_physicsInitialized || rawDt < 0.0 || rawDt > 0.5)
-                {
-                    _lastTime = timeSeconds;
-                    _physics.Reset(_globalTransforms);
-
-                    for (int i = 0; i < 30; i++)
-                    {
-                        _physics.Update(_globalTransforms, 1f / 60f);
-                    }
-
-                    _physics.ApplyToGlobalTransforms(_globalTransforms);
-                    _physicsInitialized = true;
-                }
-                else if (rawDt > 0.0)
-                {
-                    _lastTime = timeSeconds;
-
-                    int steps = (int)Math.Ceiling(rawDt * 60.0);
-                    if (steps > 10) steps = 10;
-
-                    float dt = (float)(rawDt / steps);
-
-                    for (int s = 0; s < steps; s++)
-                    {
-                        _physics.Update(_globalTransforms, dt);
-                    }
-
-                    _physics.ApplyToGlobalTransforms(_globalTransforms);
-                }
-                else
-                {
-                    _physics.ApplyToGlobalTransforms(_globalTransforms);
-                }
-
-                if (_physicsInitialized)
-                {
-                    fixed (int* pOrder = _evalOrder)
-                    fixed (Matrix4x4* pLocal = _localTransforms)
-                    fixed (Matrix4x4* pGlobal = _globalTransforms)
-                    {
-                        for (int k = 0; k < boneCount; k++)
-                        {
-                            int i = pOrder[k];
-                            if (_physics.IsPhysicsBone(i)) continue;
-
-                            int parent = _bones[i].ParentIndex;
-                            if (parent >= 0 && parent < boneCount)
-                                pGlobal[i] = pLocal[i] * pGlobal[parent];
-                            else
-                                pGlobal[i] = pLocal[i];
-                        }
-                    }
-                }
-            }
-
-            fixed (Matrix4x4* pInv = _inverseBindPose)
-            fixed (Matrix4x4* pGlobal = _globalTransforms)
-            fixed (Matrix4x4* pResult = _result)
+            try
             {
                 for (int i = 0; i < boneCount; i++)
                 {
-                    pResult[i] = pInv[i] * pGlobal[i];
+                    var bone = _bones[i];
+                    Vector3 translation = Vector3.Zero;
+                    Quaternion rotation = Quaternion.Identity;
+
+                    if (_framesByBone.TryGetValue(bone.Name, out var frames) && frames.Count > 0)
+                    {
+                        InterpolateFrame(frames, frame, subFrame, out translation, out rotation);
+                    }
+
+                    Vector3 boneOffset;
+                    if (bone.ParentIndex >= 0 && bone.ParentIndex < boneCount)
+                        boneOffset = bone.Position - _bones[bone.ParentIndex].Position;
+                    else
+                        boneOffset = bone.Position;
+
+                    localTransforms[i] =
+                        Matrix4x4.CreateFromQuaternion(rotation) *
+                        Matrix4x4.CreateTranslation(translation + boneOffset);
+                }
+
+                fixed (int* pOrder = _evalOrder)
+                fixed (Matrix4x4* pLocal = localTransforms)
+                fixed (Matrix4x4* pGlobal = globalTransforms)
+                {
+                    for (int k = 0; k < boneCount; k++)
+                    {
+                        int i = pOrder[k];
+                        int parent = _bones[i].ParentIndex;
+                        if (parent >= 0 && parent < boneCount)
+                            pGlobal[i] = pLocal[i] * pGlobal[parent];
+                        else
+                            pGlobal[i] = pLocal[i];
+                    }
+                }
+
+                if (_physics != null)
+                {
+                    double rawDt = double.IsNaN(_lastTime) ? 0.0 : timeSeconds - _lastTime;
+
+                    if (!_physicsInitialized || rawDt < 0.0 || rawDt > 0.5)
+                    {
+                        _lastTime = timeSeconds;
+                        _physics.Reset(globalTransforms);
+
+                        for (int i = 0; i < 30; i++)
+                        {
+                            _physics.Update(globalTransforms, 1f / 60f);
+                        }
+
+                        _physics.ApplyToGlobalTransforms(globalTransforms);
+                        _physicsInitialized = true;
+                    }
+                    else if (rawDt > 0.0)
+                    {
+                        _lastTime = timeSeconds;
+
+                        int steps = (int)Math.Ceiling(rawDt * 60.0);
+                        if (steps > 10) steps = 10;
+
+                        float dt = (float)(rawDt / steps);
+
+                        for (int s = 0; s < steps; s++)
+                        {
+                            _physics.Update(globalTransforms, dt);
+                        }
+
+                        _physics.ApplyToGlobalTransforms(globalTransforms);
+                    }
+                    else
+                    {
+                        _physics.ApplyToGlobalTransforms(globalTransforms);
+                    }
+
+                    if (_physicsInitialized)
+                    {
+                        fixed (int* pOrder = _evalOrder)
+                        fixed (Matrix4x4* pLocal = localTransforms)
+                        fixed (Matrix4x4* pGlobal = globalTransforms)
+                        {
+                            for (int k = 0; k < boneCount; k++)
+                            {
+                                int i = pOrder[k];
+                                if (_physics.IsPhysicsBone(i)) continue;
+
+                                int parent = _bones[i].ParentIndex;
+                                if (parent >= 0 && parent < boneCount)
+                                    pGlobal[i] = pLocal[i] * pGlobal[parent];
+                                else
+                                    pGlobal[i] = pLocal[i];
+                            }
+                        }
+                    }
+                }
+
+                fixed (Matrix4x4* pInv = _inverseBindPose)
+                fixed (Matrix4x4* pGlobal = globalTransforms)
+                fixed (Matrix4x4* pResult = result)
+                {
+                    for (int i = 0; i < boneCount; i++)
+                    {
+                        pResult[i] = pInv[i] * pGlobal[i];
+                    }
                 }
             }
-
-            return _result;
+            finally
+            {
+                System.Buffers.ArrayPool<Matrix4x4>.Shared.Return(localTransforms);
+                System.Buffers.ArrayPool<Matrix4x4>.Shared.Return(globalTransforms);
+            }
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -242,32 +244,24 @@ namespace ObjLoader.Systems.Animation
             float t = range > 0 ? ((effectiveFrame - f0.FrameNumber) + subFrame) / range : 0f;
             t = Math.Clamp(t, 0f, 1f);
 
-            if (f1.Interpolation != null && f1.Interpolation.Length >= 64)
-            {
-                float txBez = MathUtility.BezierEval(
-                    f1.Interpolation[0] / 127f, f1.Interpolation[4] / 127f,
-                    f1.Interpolation[8] / 127f, f1.Interpolation[12] / 127f, t);
-                float tyBez = MathUtility.BezierEval(
-                    f1.Interpolation[1] / 127f, f1.Interpolation[5] / 127f,
-                    f1.Interpolation[9] / 127f, f1.Interpolation[13] / 127f, t);
-                float tzBez = MathUtility.BezierEval(
-                    f1.Interpolation[2] / 127f, f1.Interpolation[6] / 127f,
-                    f1.Interpolation[10] / 127f, f1.Interpolation[14] / 127f, t);
-                float trBez = MathUtility.BezierEval(
-                    f1.Interpolation[3] / 127f, f1.Interpolation[7] / 127f,
-                    f1.Interpolation[11] / 127f, f1.Interpolation[15] / 127f, t);
+            float txBez = MathUtility.BezierEval(
+                f1.Interpolation[0] / 127f, f1.Interpolation[4] / 127f,
+                f1.Interpolation[8] / 127f, f1.Interpolation[12] / 127f, t);
+            float tyBez = MathUtility.BezierEval(
+                f1.Interpolation[1] / 127f, f1.Interpolation[5] / 127f,
+                f1.Interpolation[9] / 127f, f1.Interpolation[13] / 127f, t);
+            float tzBez = MathUtility.BezierEval(
+                f1.Interpolation[2] / 127f, f1.Interpolation[6] / 127f,
+                f1.Interpolation[10] / 127f, f1.Interpolation[14] / 127f, t);
+            float trBez = MathUtility.BezierEval(
+                f1.Interpolation[3] / 127f, f1.Interpolation[7] / 127f,
+                f1.Interpolation[11] / 127f, f1.Interpolation[15] / 127f, t);
 
-                position = new Vector3(
-                    f0.Position.X + (f1.Position.X - f0.Position.X) * txBez,
-                    f0.Position.Y + (f1.Position.Y - f0.Position.Y) * tyBez,
-                    f0.Position.Z + (f1.Position.Z - f0.Position.Z) * tzBez);
-                rotation = Quaternion.Slerp(f0.Rotation, f1.Rotation, trBez);
-            }
-            else
-            {
-                position = Vector3.Lerp(f0.Position, f1.Position, t);
-                rotation = Quaternion.Slerp(f0.Rotation, f1.Rotation, t);
-            }
+            position = new Vector3(
+                f0.Position.X + (f1.Position.X - f0.Position.X) * txBez,
+                f0.Position.Y + (f1.Position.Y - f0.Position.Y) * tyBez,
+                f0.Position.Z + (f1.Position.Z - f0.Position.Z) * tzBez);
+            rotation = Quaternion.Slerp(f0.Rotation, f1.Rotation, trBez);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -54,6 +54,7 @@ namespace ObjLoader.Rendering.Processors
         private bool _disposed;
 
         private static readonly ID3D11ShaderResourceView[] _nullSrvArray3 = new ID3D11ShaderResourceView[3];
+        private readonly ID3D11ShaderResourceView[] _srvBindArray3 = new ID3D11ShaderResourceView[3];
 
         public bool IsAvailable => _shaderCompiled;
 
@@ -137,7 +138,10 @@ namespace ObjLoader.Rendering.Processors
 
             context.CSSetShader(_computeShader);
             context.CSSetConstantBuffer(0, _constantBuffer);
-            context.CSSetShaderResources(0, new ID3D11ShaderResourceView[] { _inputVertexSrv!, _weightSrv!, _boneSrv! });
+            _srvBindArray3[0] = _inputVertexSrv!;
+            _srvBindArray3[1] = _weightSrv!;
+            _srvBindArray3[2] = _boneSrv!;
+            context.CSSetShaderResources(0, _srvBindArray3);
             context.CSSetUnorderedAccessView(0, _outputUav);
 
             int groups = (vertexCount + ThreadGroupSize - 1) / ThreadGroupSize;

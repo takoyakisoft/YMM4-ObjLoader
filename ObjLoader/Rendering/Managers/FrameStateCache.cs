@@ -6,7 +6,7 @@ namespace ObjLoader.Rendering.Managers
     internal sealed class FrameStateCache : IFrameStateCache
     {
         private readonly Dictionary<long, FrameState> _cache = new();
-        private const int MaxCacheSize = 600;
+        private const int MaxCacheSize = 32;
         private readonly Queue<long> _frameQueue = new();
         private readonly Queue<FrameState> _pool = new();
         private bool _isDisposed;

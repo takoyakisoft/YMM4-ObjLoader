@@ -12,9 +12,6 @@ namespace ObjLoader.Services.Mmd.Animation
     {
         private const double MmdFps = 30.0;
 
-        [ThreadStatic]
-        private static ObjVertex[]? _skinBuffer;
-
         public List<CameraKeyframe> ConvertCameraFrames(VmdData vmdData)
         {
             var keyframes = new List<CameraKeyframe>();
@@ -22,7 +19,8 @@ namespace ObjLoader.Services.Mmd.Animation
             if (vmdData.CameraFrames.Count == 0)
                 return keyframes;
 
-            var sortedFrames = vmdData.CameraFrames.OrderBy(f => f.FrameNumber).ToList();
+            var sortedFrames = new List<VmdCameraFrame>(vmdData.CameraFrames);
+            sortedFrames.Sort(static (a, b) => a.FrameNumber.CompareTo(b.FrameNumber));
 
             foreach (var frame in sortedFrames)
             {
@@ -87,10 +85,7 @@ namespace ObjLoader.Services.Mmd.Animation
         {
             int count = original.Length;
 
-            if (_skinBuffer == null || _skinBuffer.Length != count)
-                _skinBuffer = new ObjVertex[count];
-
-            var result = _skinBuffer;
+            var result = System.Buffers.ArrayPool<ObjVertex>.Shared.Rent(count);
             int boneCount = boneTransforms.Length;
 
             for (int i = 0; i < count; i++)
