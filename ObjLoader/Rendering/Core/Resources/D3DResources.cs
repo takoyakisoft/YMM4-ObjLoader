@@ -5,7 +5,7 @@ using Vortice.Direct3D11;
 using Vortice.DXGI;
 using YukkuriMovieMaker.Commons;
 
-namespace ObjLoader.Rendering.Core
+namespace ObjLoader.Rendering.Core.Resources
 {
     internal sealed class D3DResources : IDisposable
     {

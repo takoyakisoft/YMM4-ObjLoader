@@ -1,5 +1,5 @@
 ﻿using System.Numerics;
-using ObjLoader.Rendering.Core;
+using ObjLoader.Rendering.Core.States;
 using ObjLoader.Settings;
 
 namespace ObjLoader.Rendering.Utilities

@@ -1,7 +1,7 @@
 using ObjLoader.Settings;
 using Vortice.Direct3D11;
 
-namespace ObjLoader.Rendering.Core
+namespace ObjLoader.Rendering.Core.Resources
 {
     internal sealed class D3DResourcesPool
     {

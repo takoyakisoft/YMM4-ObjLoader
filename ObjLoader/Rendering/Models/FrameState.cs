@@ -1,4 +1,4 @@
-﻿using ObjLoader.Rendering.Core;
+﻿using ObjLoader.Rendering.Core.States;
 
 namespace ObjLoader.Rendering.Models
 {

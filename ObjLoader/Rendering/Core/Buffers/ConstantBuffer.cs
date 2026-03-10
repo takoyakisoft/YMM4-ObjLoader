@@ -1,8 +1,7 @@
-using System;
 using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
 
-namespace ObjLoader.Rendering.Core
+namespace ObjLoader.Rendering.Core.Buffers
 {
     internal sealed class ConstantBuffer<T> : IDisposable where T : unmanaged
     {

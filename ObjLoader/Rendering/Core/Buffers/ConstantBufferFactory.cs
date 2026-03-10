@@ -2,7 +2,7 @@
 using System.Windows.Media;
 using ObjLoader.Settings;
 
-namespace ObjLoader.Rendering.Core
+namespace ObjLoader.Rendering.Core.Buffers
 {
     internal static class ConstantBufferFactory
     {

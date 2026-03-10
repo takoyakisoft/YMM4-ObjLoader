@@ -3,7 +3,7 @@ using ObjLoader.Core.Models;
 using ObjLoader.Rendering.Processors;
 using Vortice.Direct3D11;
 
-namespace ObjLoader.Rendering.Core
+namespace ObjLoader.Rendering.Core.Resolvers
 {
     internal class SkinningState
     {

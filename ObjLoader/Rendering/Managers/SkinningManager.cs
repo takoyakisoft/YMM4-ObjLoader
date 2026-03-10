@@ -1,7 +1,7 @@
 ﻿using ObjLoader.Core.Mmd;
 using ObjLoader.Core.Models;
 using ObjLoader.Parsers;
-using ObjLoader.Rendering.Core;
+using ObjLoader.Rendering.Core.Resolvers;
 using ObjLoader.Rendering.Managers.Interfaces;
 using ObjLoader.Rendering.Processors;
 using ObjLoader.Services.Mmd.Animation;

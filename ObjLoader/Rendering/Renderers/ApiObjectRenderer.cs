@@ -8,6 +8,8 @@ using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 using Vortice.Direct3D;
+using ObjLoader.Rendering.Core.Buffers;
+using ObjLoader.Rendering.Core.Resources;
 
 namespace ObjLoader.Rendering.Renderers
 {

@@ -1,7 +1,9 @@
 using ObjLoader.Cache.Gpu;
 using ObjLoader.Core.Models;
 using ObjLoader.Core.Timeline;
-using ObjLoader.Rendering.Core;
+using ObjLoader.Rendering.Core.Buffers;
+using ObjLoader.Rendering.Core.Resources;
+using ObjLoader.Rendering.Core.States;
 using ObjLoader.Rendering.Utilities;
 using System.Numerics;
 using System.Runtime.CompilerServices;

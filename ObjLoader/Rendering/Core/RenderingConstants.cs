@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Vortice.Mathematics;
+using ObjLoader.Settings;
 
 namespace ObjLoader.Rendering.Core
 {
@@ -44,5 +45,15 @@ namespace ObjLoader.Rendering.Core
         public static readonly Color4 ClearColorLight = new Color4(0.9f, 0.9f, 0.9f, 1.0f);
         public static readonly Vector4 GridColorLight = new Vector4(0.4f, 0.4f, 0.4f, 1.0f);
         public static readonly Vector4 AxisColorLight = new Vector4(0.1f, 0.1f, 0.1f, 1.0f);
+
+        public static Matrix4x4 GetAxisConversionMatrix(CoordinateSystem system) => system switch
+        {
+            CoordinateSystem.RightHandedZUp => Matrix4x4.CreateRotationX((float)(-90 * Math.PI / 180.0)),
+            CoordinateSystem.LeftHandedYUp => Matrix4x4.CreateScale(1, 1, -1),
+            CoordinateSystem.LeftHandedZUp => Matrix4x4.CreateRotationX((float)(-90 * Math.PI / 180.0)) * Matrix4x4.CreateScale(1, 1, -1),
+            _ => Matrix4x4.Identity
+        };
+
+        public static bool IsZUp(CoordinateSystem system) => system is CoordinateSystem.RightHandedZUp or CoordinateSystem.LeftHandedZUp;
     }
 }
