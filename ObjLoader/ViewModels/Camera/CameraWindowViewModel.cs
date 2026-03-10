@@ -67,11 +67,14 @@ namespace ObjLoader.ViewModels.Camera
         private volatile bool _isGizmoDirty = true;
 
         private ISceneDrawManager? _subscribedDrawManager;
+        private long _lastDrawManagerUpdateCount;
 
         public event EventHandler<string>? OnNotification;
 
         private GeometryModel3D[] _cubeFaces;
         private GeometryModel3D[] _cubeCorners;
+
+        private string _hoveredDirectionName = "";
 
         public PerspectiveCamera Camera { get; } = new PerspectiveCamera { FieldOfView = 45, NearPlaneDistance = 0.01, FarPlaneDistance = 100000 };
         public PerspectiveCamera GizmoCamera { get; } = new PerspectiveCamera { FieldOfView = 45, NearPlaneDistance = 0.1, FarPlaneDistance = 100 };
@@ -131,8 +134,15 @@ namespace ObjLoader.ViewModels.Camera
 
         public string HoveredDirectionName
         {
-            get => _interactionManager.HoveredDirectionName;
-            set => OnPropertyChanged();
+            get => _hoveredDirectionName;
+            set
+            {
+                if (_hoveredDirectionName != value)
+                {
+                    _hoveredDirectionName = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public bool IsTargetFree => !_isTargetFixed;
@@ -143,6 +153,7 @@ namespace ObjLoader.ViewModels.Camera
             get => _cameraLogic.CamX;
             set
             {
+                if (_cameraLogic.CamX == value) return;
                 _cameraLogic.CamX = value;
                 OnPropertyChanged();
                 UpdateRange(value, ref _camXMin, ref _camXMax, ref _camXScaleInfo, nameof(CamXMin), nameof(CamXMax), nameof(CamXScaleInfo));
@@ -159,6 +170,7 @@ namespace ObjLoader.ViewModels.Camera
             get => _cameraLogic.CamY;
             set
             {
+                if (_cameraLogic.CamY == value) return;
                 _cameraLogic.CamY = value;
                 OnPropertyChanged();
                 UpdateRange(value, ref _camYMin, ref _camYMax, ref _camYScaleInfo, nameof(CamYMin), nameof(CamYMax), nameof(CamYScaleInfo));
@@ -175,6 +187,7 @@ namespace ObjLoader.ViewModels.Camera
             get => _cameraLogic.CamZ;
             set
             {
+                if (_cameraLogic.CamZ == value) return;
                 _cameraLogic.CamZ = value;
                 OnPropertyChanged();
                 UpdateRange(value, ref _camZMin, ref _camZMax, ref _camZScaleInfo, nameof(CamZMin), nameof(CamZMax), nameof(CamZScaleInfo));
@@ -191,6 +204,7 @@ namespace ObjLoader.ViewModels.Camera
             get => _cameraLogic.TargetX;
             set
             {
+                if (_cameraLogic.TargetX == value) return;
                 _cameraLogic.TargetX = value;
                 OnPropertyChanged();
                 UpdateRange(value, ref _targetXMin, ref _targetXMax, ref _targetXScaleInfo, nameof(TargetXMin), nameof(TargetXMax), nameof(TargetXScaleInfo));
@@ -207,6 +221,7 @@ namespace ObjLoader.ViewModels.Camera
             get => _cameraLogic.TargetY;
             set
             {
+                if (_cameraLogic.TargetY == value) return;
                 _cameraLogic.TargetY = value;
                 OnPropertyChanged();
                 UpdateRange(value, ref _targetYMin, ref _targetYMax, ref _targetYScaleInfo, nameof(TargetYMin), nameof(TargetYMax), nameof(TargetYScaleInfo));
@@ -223,6 +238,7 @@ namespace ObjLoader.ViewModels.Camera
             get => _cameraLogic.TargetZ;
             set
             {
+                if (_cameraLogic.TargetZ == value) return;
                 _cameraLogic.TargetZ = value;
                 OnPropertyChanged();
                 UpdateRange(value, ref _targetZMin, ref _targetZMax, ref _targetZScaleInfo, nameof(TargetZMin), nameof(TargetZMax), nameof(TargetZScaleInfo));
@@ -263,9 +279,9 @@ namespace ObjLoader.ViewModels.Camera
         public double TargetZMax { get => _targetZMax; set => Set(ref _targetZMax, value); }
         public string TargetZScaleInfo { get => _targetZScaleInfo; set => Set(ref _targetZScaleInfo, value); }
 
-        public bool IsGridVisible { get => _isGridVisible; set { Set(ref _isGridVisible, value); _isDirty = true; } }
-        public bool IsInfiniteGrid { get => _isInfiniteGrid; set { Set(ref _isInfiniteGrid, value); _isDirty = true; } }
-        public bool IsWireframe { get => _isWireframe; set { Set(ref _isWireframe, value); _isDirty = true; } }
+        public bool IsGridVisible { get => _isGridVisible; set { if (Set(ref _isGridVisible, value)) _isDirty = true; } }
+        public bool IsInfiniteGrid { get => _isInfiniteGrid; set { if (Set(ref _isInfiniteGrid, value)) _isDirty = true; } }
+        public bool IsWireframe { get => _isWireframe; set { if (Set(ref _isWireframe, value)) _isDirty = true; } }
         public bool IsPilotView { get => _cameraLogic.IsPilotView; set { _cameraLogic.IsPilotView = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsPilotFrameVisible)); _isDirty = true; _isGizmoDirty = true; } }
         public bool IsSnapping { get => _isSnapping; set => Set(ref _isSnapping, value); }
         public bool IsTargetFixed { get => _isTargetFixed; set { if (Set(ref _isTargetFixed, value)) { OnPropertyChanged(nameof(IsTargetFree)); _isDirty = true; _isGizmoDirty = true; } } }
@@ -349,7 +365,7 @@ namespace ObjLoader.ViewModels.Camera
             _sceneService = new SceneService(_parameter, _renderService);
             _sceneService.OnModelLoaded = () => { _isDirty = true; _isGizmoDirty = true; };
             _cameraLogic = new CameraLogic();
-            _cameraLogic.Updated += () => { _isDirty = true; _isGizmoDirty = true; };
+            _cameraLogic.Updated += OnCameraLogicUpdated;
             _undoStack = new UndoStack<(double, double, double, double, double, double)>();
             _animationManager = new CameraAnimationManager();
             _interactionManager = new CameraInteractionManager(this);
@@ -407,29 +423,45 @@ namespace ObjLoader.ViewModels.Camera
             if (drawManager != null)
             {
                 _subscribedDrawManager = drawManager;
+                _lastDrawManagerUpdateCount = drawManager.UpdateCount;
                 _subscribedDrawManager.Updated += OnDrawManagerUpdated;
             }
 
             CompositionTarget.Rendering += OnRendering;
         }
 
-        private void OnDrawManagerUpdated(object? sender, EventArgs e)
+        private void OnCameraLogicUpdated()
         {
             _isDirty = true;
+            _isGizmoDirty = true;
+        }
+
+        private void OnDrawManagerUpdated(object? sender, EventArgs e)
+        {
+            if (_subscribedDrawManager == null) return;
+            long current = _subscribedDrawManager.UpdateCount;
+            if (current != _lastDrawManagerUpdateCount)
+            {
+                _lastDrawManagerUpdateCount = current;
+                _isDirty = true;
+            }
         }
 
         partial void InitializeMenuItems();
 
         private void OnRendering(object? sender, EventArgs e)
         {
-            if (_isDirty || _isGizmoDirty || IsPlaying)
+            if (!_isDirty && !_isGizmoDirty && !IsPlaying) return;
+
+            if (_isGizmoDirty || IsPlaying)
             {
-                if (_isGizmoDirty || IsPlaying)
-                {
-                    _cameraLogic.UpdateViewport(Camera, GizmoCamera, _sceneService.ModelHeight);
-                    UpdateSceneCameraVisual();
-                    _isGizmoDirty = false;
-                }
+                _cameraLogic.UpdateViewport(Camera, GizmoCamera, _sceneService.ModelHeight);
+                UpdateSceneCameraVisual();
+                _isGizmoDirty = false;
+            }
+
+            if (_isDirty || IsPlaying)
+            {
                 UpdateD3DScene();
                 _isDirty = false;
             }
@@ -764,16 +796,16 @@ namespace ObjLoader.ViewModels.Camera
 
         private void UpdateD3DScene()
         {
-            bool isInteracting = !string.IsNullOrEmpty(HoveredDirectionName);
             _sceneService.Render(Camera, CurrentTime, _viewportWidth, _viewportHeight, IsPilotView, _themeColor, _isWireframe, _isGridVisible, _isInfiniteGrid, false, false);
         }
 
         private void UpdateSceneCameraVisual()
         {
-            bool isInteracting = !string.IsNullOrEmpty(HoveredDirectionName);
             double yOffset = _sceneService.ModelHeight / 2.0;
             var camPos = new Point3D(CamX, CamY + yOffset, CamZ);
             var targetPos = new Point3D(TargetX, TargetY + yOffset, TargetZ);
+
+            bool isInteracting = _hoveredDirectionName.Length > 0;
 
             GizmoBuilder.BuildGizmos(
                 GizmoXGeometry, GizmoYGeometry, GizmoZGeometry,
@@ -787,8 +819,12 @@ namespace ObjLoader.ViewModels.Camera
 
             OnPropertyChanged(nameof(CameraVisualGeometry));
             OnPropertyChanged(nameof(TargetVisualGeometry));
-            OnPropertyChanged(nameof(GizmoXGeometry)); OnPropertyChanged(nameof(GizmoYGeometry)); OnPropertyChanged(nameof(GizmoZGeometry));
-            OnPropertyChanged(nameof(GizmoXYGeometry)); OnPropertyChanged(nameof(GizmoYZGeometry)); OnPropertyChanged(nameof(GizmoZXGeometry));
+            OnPropertyChanged(nameof(GizmoXGeometry));
+            OnPropertyChanged(nameof(GizmoYGeometry));
+            OnPropertyChanged(nameof(GizmoZGeometry));
+            OnPropertyChanged(nameof(GizmoXYGeometry));
+            OnPropertyChanged(nameof(GizmoYZGeometry));
+            OnPropertyChanged(nameof(GizmoZXGeometry));
         }
 
         private void LoadModel()
@@ -914,7 +950,7 @@ namespace ObjLoader.ViewModels.Camera
         public void HandleGizmoMove(object? modelHit)
         {
             _interactionManager.HandleGizmoMove(modelHit, GizmoXGeometry, GizmoYGeometry, GizmoZGeometry, GizmoXYGeometry, GizmoYZGeometry, GizmoZXGeometry, CameraVisualGeometry, TargetVisualGeometry);
-            OnPropertyChanged(nameof(HoveredDirectionName));
+            HoveredDirectionName = _interactionManager.HoveredDirectionName;
         }
 
         public void CheckGizmoHit(object? modelHit)

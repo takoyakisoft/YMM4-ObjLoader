@@ -29,7 +29,7 @@ internal sealed class SceneRenderDataConverter : IDisposable
     private readonly HashSet<string> _validLayerGuidsBuffer = new();
     private readonly List<string> _animatorsToRemoveBuffer = new();
 
-    public IReadOnlyList<LayerRenderData> RenderDataList => _layerRenderDataBuffer;
+    public List<LayerRenderData> RenderDataList => _layerRenderDataBuffer;
 
     public SceneRenderDataConverter(RenderService renderService)
     {
@@ -38,8 +38,8 @@ internal sealed class SceneRenderDataConverter : IDisposable
 
     public void ConvertToRenderData(
         ObjLoaderParameter parameter,
-        IReadOnlyDictionary<string, HierarchyNode> localPlacements,
-        IReadOnlyDictionary<string, Matrix4x4> globalPlacements,
+        Dictionary<string, HierarchyNode> localPlacements,
+        Dictionary<string, Matrix4x4> globalPlacements,
         Matrix4x4 axisConversion,
         double globalLiftY,
         double currentFrame,

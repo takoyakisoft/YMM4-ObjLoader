@@ -52,8 +52,13 @@ internal sealed class SceneService : IDisposable
         var camUp = camera.UpDirection; camUp.Normalize();
         var camPos = camera.Position;
         var target = camPos + camDir;
+
+        float camPosX = (float)camPos.X;
+        float camPosY = (float)camPos.Y;
+        float camPosZ = (float)camPos.Z;
+
         var view = Matrix4x4.CreateLookAt(
-            new Vector3((float)camPos.X, (float)camPos.Y, (float)camPos.Z),
+            new Vector3(camPosX, camPosY, camPosZ),
             new Vector3((float)target.X, (float)target.Y, (float)target.Z),
             new Vector3((float)camUp.X, (float)camUp.Y, (float)camUp.Z));
 
@@ -97,7 +102,7 @@ internal sealed class SceneService : IDisposable
             _dataConverter.RenderDataList,
             view,
             proj,
-            new Vector3((float)camPos.X, (float)camPos.Y, (float)camPos.Z),
+            new Vector3(camPosX, camPosY, camPosZ),
             themeColor,
             isWireframe,
             isGrid,

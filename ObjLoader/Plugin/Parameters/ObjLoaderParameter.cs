@@ -23,6 +23,7 @@ using ObjLoader.Plugin.CameraAnimation;
 using ObjLoader.Rendering.Core;
 using ObjLoader.Core.Enums;
 using ObjLoader.Core.Timeline;
+using System.Text;
 
 namespace ObjLoader.Plugin
 {
@@ -34,6 +35,8 @@ namespace ObjLoader.Plugin
 
         private bool _isLoading = false;
         private int _updateSuspendCount = 0;
+        private Action? _forceUpdateAction;
+        private readonly StringBuilder _layerIdBuilder = new StringBuilder();
 
         [Display(GroupName = nameof(Texts.Group_Model), Name = nameof(Texts.Setting), ResourceType = typeof(Texts))]
         [ItemSettingButton(PropertyEditorSize = PropertyEditorSize.FullWidth)]
@@ -298,8 +301,7 @@ namespace ObjLoader.Plugin
                 {
                     UpdateLayerSignature();
                     OnPropertyChanged(nameof(Layers));
-                    _versionCounter++;
-                    SettingsVersion.CopyFrom(new Animation(_versionCounter, 0, 100000000));
+                    BumpVersion();
                     OnPropertyChanged(string.Empty);
                 }
             }
@@ -325,15 +327,31 @@ namespace ObjLoader.Plugin
         {
             if (_updateSuspendCount > 0) return;
 
-            if (Application.Current != null && Application.Current.Dispatcher != null)
+            if (Application.Current?.Dispatcher != null)
             {
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    _versionCounter++;
-                    SettingsVersion.CopyFrom(new Animation(_versionCounter, 0, 100000000));
-                    OnPropertyChanged(string.Empty);
-                    OnPropertyChanged(nameof(Layers));
-                });
+                _forceUpdateAction ??= ForceUpdateCore;
+                Application.Current.Dispatcher.Invoke(_forceUpdateAction);
+            }
+        }
+
+        private void ForceUpdateCore()
+        {
+            BumpVersion();
+            OnPropertyChanged(string.Empty);
+            OnPropertyChanged(nameof(Layers));
+        }
+
+        private void BumpVersion()
+        {
+            _versionCounter++;
+            var values = SettingsVersion.Values;
+            if (values != null && values.Count > 0)
+            {
+                values[0].Value = _versionCounter;
+            }
+            else
+            {
+                SettingsVersion.CopyFrom(new Animation(_versionCounter, 0, 100000000));
             }
         }
 
@@ -344,7 +362,13 @@ namespace ObjLoader.Plugin
 
             if (Layers != null)
             {
-                var newIds = string.Join(",", Layers.Select(l => l.Guid));
+                _layerIdBuilder.Clear();
+                for (int i = 0; i < Layers.Count; i++)
+                {
+                    if (i > 0) _layerIdBuilder.Append(',');
+                    _layerIdBuilder.Append(Layers[i].Guid);
+                }
+                var newIds = _layerIdBuilder.ToString();
                 if (LayerIds != newIds)
                 {
                     LayerIds = newIds;

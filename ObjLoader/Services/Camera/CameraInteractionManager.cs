@@ -52,10 +52,10 @@ namespace ObjLoader.Services.Camera
             }
         }
 
-        public void HandleViewCubeClick(object? modelHit, GeometryModel3D[] cubeFaces, GeometryModel3D[] cubeCorners)
+        public void HandleViewCubeClick(object? modelHit, ReadOnlySpan<GeometryModel3D> cubeFaces, ReadOnlySpan<GeometryModel3D> cubeCorners)
         {
-            if (modelHit == null) return;
-            int faceIdx = Array.IndexOf(cubeFaces, modelHit);
+            if (modelHit is not GeometryModel3D hitModel) return;
+            int faceIdx = cubeFaces.IndexOf(hitModel);
             if (faceIdx >= 0)
             {
                 if (faceIdx == 0) _manipulator.AnimateView(Math.PI / 2, Math.PI / 2);
@@ -66,7 +66,7 @@ namespace ObjLoader.Services.Camera
                 else if (faceIdx == 5) _manipulator.AnimateView(Math.PI, Math.PI / 2);
                 return;
             }
-            int cornerIdx = Array.IndexOf(cubeCorners, modelHit);
+            int cornerIdx = cubeCorners.IndexOf(hitModel);
             if (cornerIdx >= 0)
             {
                 if (cornerIdx == 0) _manipulator.AnimateView(Math.PI / 4, 0.955);

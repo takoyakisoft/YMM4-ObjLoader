@@ -7,56 +7,56 @@ using ObjLoader.Rendering.Core.Resources;
 
 namespace ObjLoader.Services.Rendering.Passes;
 
-internal class RenderPassContext
+internal sealed class RenderPassContext
 {
-    public required ID3D11DeviceContext DeviceContext { get; init; }
-    public required D3DResources Resources { get; init; }
-    public required IReadOnlyList<LayerRenderData> Layers { get; init; }
-    public required Matrix4x4[] LayerWorlds { get; init; }
-    public required Matrix4x4[] LayerWvps { get; init; }
-    
-    public required IReadOnlyList<(int LayerIndex, int PartIndex)> OpaqueParts { get; init; }
-    public required IReadOnlyList<TransparentPart> TransparentParts { get; init; }
-    
-    public required ID3D11Buffer GridVertexBuffer { get; init; }
-    public required Vector4 GridColor { get; init; }
-    public required Vector4 AxisColor { get; init; }
-    
+    public ID3D11DeviceContext DeviceContext { get; set; } = null!;
+    public D3DResources Resources { get; set; } = null!;
+    public List<LayerRenderData> Layers { get; set; } = null!;
+    public Matrix4x4[] LayerWorlds { get; set; } = null!;
+    public Matrix4x4[] LayerWvps { get; set; } = null!;
+
+    public List<(int LayerIndex, int PartIndex)> OpaqueParts { get; set; } = null!;
+    public List<TransparentPart> TransparentParts { get; set; } = null!;
+
+    public ID3D11Buffer GridVertexBuffer { get; set; } = null!;
+    public Vector4 GridColor { get; set; }
+    public Vector4 AxisColor { get; set; }
+
     public Matrix4x4 LightViewProj { get; set; } = Matrix4x4.Identity;
     public bool EnableShadow { get; set; }
     public bool RenderShadowMap { get; set; }
-    
-    public required ID3D11ShaderResourceView[] ShadowSrvArray { get; init; }
-    public required ID3D11SamplerState[] SamplerArray { get; init; }
-    public required ID3D11SamplerState[] ShadowSamplerArray { get; init; }
-    public required IReadOnlyDictionary<string, ID3D11ShaderResourceView> DynamicTextures { get; init; }
-    
-    public required Matrix4x4 View { get; init; }
-    public required Matrix4x4 Proj { get; init; }
-    public required Vector3 CamPos { get; init; }
-    
-    public required ConstantBuffer<CBPerFrame> CbPerFrame { get; init; }
-    public required ConstantBuffer<CBPerObject> CbPerObject { get; init; }
-    public required ConstantBuffer<CBPerMaterial> CbPerMaterialCore { get; init; }
-    public required ConstantBuffer<CBSceneEffects> CbSceneEffects { get; init; }
-    public required ConstantBuffer<CBPostEffects> CbPostEffects { get; init; }
-    public required ID3D11Buffer[] CbPerFrameArray { get; init; }
-    public required ID3D11Buffer[] CbPerObjectArray { get; init; }
-    public required ID3D11Buffer[] CbPerMaterialArray { get; init; }
-    public required ID3D11Buffer[] CbSceneEffectsArray { get; init; }
-    public required ID3D11Buffer[] CbPostEffectsArray { get; init; }
-    
-    public required bool IsWireframe { get; init; }
-    public required bool IsInteracting { get; init; }
-    public required bool IsGridVisible { get; init; }
-    public required bool IsInfiniteGrid { get; init; }
-    public required double GridScale { get; init; }
-    
+
+    public ID3D11ShaderResourceView[] ShadowSrvArray { get; set; } = null!;
+    public ID3D11SamplerState[] SamplerArray { get; set; } = null!;
+    public ID3D11SamplerState[] ShadowSamplerArray { get; set; } = null!;
+    public IReadOnlyDictionary<string, ID3D11ShaderResourceView> DynamicTextures { get; set; } = null!;
+
+    public Matrix4x4 View { get; set; }
+    public Matrix4x4 Proj { get; set; }
+    public Vector3 CamPos { get; set; }
+
+    public ConstantBuffer<CBPerFrame> CbPerFrame { get; set; } = null!;
+    public ConstantBuffer<CBPerObject> CbPerObject { get; set; } = null!;
+    public ConstantBuffer<CBPerMaterial> CbPerMaterialCore { get; set; } = null!;
+    public ConstantBuffer<CBSceneEffects> CbSceneEffects { get; set; } = null!;
+    public ConstantBuffer<CBPostEffects> CbPostEffects { get; set; } = null!;
+    public ID3D11Buffer[] CbPerFrameArray { get; set; } = null!;
+    public ID3D11Buffer[] CbPerObjectArray { get; set; } = null!;
+    public ID3D11Buffer[] CbPerMaterialArray { get; set; } = null!;
+    public ID3D11Buffer[] CbSceneEffectsArray { get; set; } = null!;
+    public ID3D11Buffer[] CbPostEffectsArray { get; set; } = null!;
+
+    public bool IsWireframe { get; set; }
+    public bool IsInteracting { get; set; }
+    public bool IsGridVisible { get; set; }
+    public bool IsInfiniteGrid { get; set; }
+    public double GridScale { get; set; }
+
     public ApiObjectRenderer? ApiObjectRenderer { get; set; }
     public LocalDrawManagerAdapter? DrawManagerAdapter { get; set; }
-    
-    public required ID3D11RenderTargetView MainRtv { get; init; }
-    public required ID3D11DepthStencilView MainDsv { get; init; }
-    public required int ViewportWidth { get; init; }
-    public required int ViewportHeight { get; init; }
+
+    public ID3D11RenderTargetView MainRtv { get; set; } = null!;
+    public ID3D11DepthStencilView MainDsv { get; set; } = null!;
+    public int ViewportWidth { get; set; }
+    public int ViewportHeight { get; set; }
 }

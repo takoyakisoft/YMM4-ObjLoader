@@ -24,7 +24,6 @@ internal sealed class LocalDrawManagerAdapter : ISceneDrawManager, IDisposable
     private readonly ID3D11Device _device;
     private readonly Dictionary<SceneObjectId, LocalBillboardEntry> _localSrvs = new();
     private static readonly List<ExternalObjectHandle> _emptyExternalObjects = new();
-    private readonly HashSet<SceneObjectId> _activeIds = new();
     private readonly List<SceneObjectId> _keysToRemove = new();
 
     public event EventHandler? Updated
@@ -86,16 +85,15 @@ internal sealed class LocalDrawManagerAdapter : ISceneDrawManager, IDisposable
     public void PurgeStaleEntries()
     {
         if (_localSrvs.Count == 0) return;
-        var currentBillboards = _inner.GetBillboards();
-        _activeIds.Clear();
-        foreach (var b in currentBillboards)
-        {
-            _activeIds.Add(b.Id);
-        }
+
         _keysToRemove.Clear();
-        foreach (var key in _localSrvs.Keys)
+        foreach (var kvp in _localSrvs)
         {
-            if (!_activeIds.Contains(key)) _keysToRemove.Add(key);
+            nint handle = _inner.GetBillboardSharedHandle(kvp.Key);
+            if (handle == IntPtr.Zero)
+            {
+                _keysToRemove.Add(kvp.Key);
+            }
         }
         for (int i = 0; i < _keysToRemove.Count; i++)
         {

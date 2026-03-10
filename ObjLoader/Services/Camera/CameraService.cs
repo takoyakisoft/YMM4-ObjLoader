@@ -8,9 +8,25 @@ namespace ObjLoader.Services.Camera
         {
             if (keyframes == null || keyframes.Count == 0) return (0, 0, 0, 0, 0, 0);
 
-            var sorted = keyframes.OrderBy(k => k.Time).ToList();
-            var prev = sorted.LastOrDefault(k => k.Time <= time);
-            var next = sorted.FirstOrDefault(k => k.Time > time);
+            CameraKeyframe? prev = null;
+            CameraKeyframe? next = null;
+            double maxPrevTime = double.MinValue;
+            double minNextTime = double.MaxValue;
+
+            for (int i = 0; i < keyframes.Count; i++)
+            {
+                var k = keyframes[i];
+                if (k.Time <= time && k.Time > maxPrevTime)
+                {
+                    prev = k;
+                    maxPrevTime = k.Time;
+                }
+                if (k.Time > time && k.Time < minNextTime)
+                {
+                    next = k;
+                    minNextTime = k.Time;
+                }
+            }
 
             if (prev == null && next != null) return (next.CamX, next.CamY, next.CamZ, next.TargetX, next.TargetY, next.TargetZ);
             if (prev != null && next == null) return (prev.CamX, prev.CamY, prev.CamZ, prev.TargetX, prev.TargetY, prev.TargetZ);

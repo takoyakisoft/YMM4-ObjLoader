@@ -71,6 +71,8 @@ internal sealed class RenderService : IDisposable
     private LocalDrawManagerAdapter? _localDrawAdapter;
     private ISceneDrawManager? _lastSharedDrawManager;
 
+    private readonly RenderPassContext _reusableContext = new();
+
     public WriteableBitmap? SceneImage { get; private set; }
     public D3DResources? Resources => _d3dResources;
     public ID3D11Device? Device => _deviceManager.Device;
@@ -176,7 +178,7 @@ internal sealed class RenderService : IDisposable
     }
 
     public void Render(
-        IReadOnlyList<LayerRenderData> layers,
+        List<LayerRenderData> layers,
         Matrix4x4 view,
         Matrix4x4 proj,
         Vector3 camPos,
@@ -201,7 +203,7 @@ internal sealed class RenderService : IDisposable
         {
             Logger<RenderService>.Instance.Error("Device lost during render", ex);
         }
-        
+
         lock (_bitmapLock)
         {
             if (SceneImage != null && _stagingBuffer != null)
@@ -227,7 +229,7 @@ internal sealed class RenderService : IDisposable
     }
 
     private void RenderInternal(
-        IReadOnlyList<LayerRenderData> layers,
+        List<LayerRenderData> layers,
         Matrix4x4 view,
         Matrix4x4 proj,
         Vector3 camPos,
@@ -240,7 +242,7 @@ internal sealed class RenderService : IDisposable
         bool enableShadow)
     {
         var context = _deviceManager.Context!;
-        
+
         if (_cbPerFrameArray[0] == null && _cbPerFrame != null) _cbPerFrameArray[0] = _cbPerFrame.Buffer;
         if (_cbPerObjectArray[0] == null && _cbPerObject != null) _cbPerObjectArray[0] = _cbPerObject.Buffer;
         if (_cbPerMaterialArray[0] == null && _cbPerMaterialCore != null) _cbPerMaterialArray[0] = _cbPerMaterialCore.Buffer;
@@ -251,15 +253,16 @@ internal sealed class RenderService : IDisposable
         if (_shadowSamplerArray[0] == null) _shadowSamplerArray[0] = _d3dResources!.ShadowSampler;
 
         _usedPathsBuffer.Clear();
-        foreach (var layer in layers)
+        for (int i = 0; i < layers.Count; i++)
         {
+            var layer = layers[i];
             if (layer.Data?.PartMaterials != null)
             {
-                foreach (var pm in layer.Data.PartMaterials.Values)
+                foreach (var kvp in layer.Data.PartMaterials)
                 {
-                    if (!string.IsNullOrEmpty(pm.TexturePath))
+                    if (!string.IsNullOrEmpty(kvp.Value.TexturePath))
                     {
-                        _usedPathsBuffer.Add(pm.TexturePath!);
+                        _usedPathsBuffer.Add(kvp.Value.TexturePath!);
                     }
                 }
             }
@@ -275,59 +278,57 @@ internal sealed class RenderService : IDisposable
 
         ClassifyPartsByOpacity(layers, camPos);
 
-        var dynamicTextures = _dynamicTextureManager.Textures;
-
-        var passContext = new RenderPassContext
-        {
-            DeviceContext = context,
-            Resources = _d3dResources!,
-            Layers = layers,
-            LayerWorlds = _cachedLayerWorlds!,
-            LayerWvps = _cachedLayerWvps!,
-            OpaqueParts = _opaquePartList,
-            TransparentParts = _transparentParts,
-            GridVertexBuffer = _gridVertexBuffer!,
-            GridColor = gridColor,
-            AxisColor = axisColor,
-            EnableShadow = enableShadow,
-            ShadowSrvArray = _shadowSrvArray,
-            SamplerArray = _samplerArray,
-            ShadowSamplerArray = _shadowSamplerArray,
-            DynamicTextures = dynamicTextures,
-            View = view,
-            Proj = proj,
-            CamPos = camPos,
-            CbPerFrame = _cbPerFrame!,
-            CbPerObject = _cbPerObject!,
-            CbPerMaterialCore = _cbPerMaterialCore!,
-            CbSceneEffects = _cbSceneEffects!,
-            CbPostEffects = _cbPostEffects!,
-            CbPerFrameArray = _cbPerFrameArray,
-            CbPerObjectArray = _cbPerObjectArray,
-            CbPerMaterialArray = _cbPerMaterialArray,
-            CbSceneEffectsArray = _cbSceneEffectsArray,
-            CbPostEffectsArray = _cbPostEffectsArray,
-            IsWireframe = isWireframe,
-            IsInteracting = isInteracting,
-            IsGridVisible = isGridVisible,
-            IsInfiniteGrid = isInfiniteGrid,
-            GridScale = gridScale,
-            ApiObjectRenderer = (!string.IsNullOrEmpty(_targetInstanceId) && _apiObjectRenderer != null) ? _apiObjectRenderer : null,
-            DrawManagerAdapter = !string.IsNullOrEmpty(_targetInstanceId) ? GetOrCreateAdapter() : null,
-            MainRtv = _deviceManager.Rtv!,
-            MainDsv = _deviceManager.Dsv!,
-            ViewportWidth = _deviceManager.ViewportWidth,
-            ViewportHeight = _deviceManager.ViewportHeight,
-        };
+        var passContext = _reusableContext;
+        passContext.DeviceContext = context;
+        passContext.Resources = _d3dResources!;
+        passContext.Layers = layers;
+        passContext.LayerWorlds = _cachedLayerWorlds!;
+        passContext.LayerWvps = _cachedLayerWvps!;
+        passContext.OpaqueParts = _opaquePartList;
+        passContext.TransparentParts = _transparentParts;
+        passContext.GridVertexBuffer = _gridVertexBuffer!;
+        passContext.GridColor = gridColor;
+        passContext.AxisColor = axisColor;
+        passContext.EnableShadow = enableShadow;
+        passContext.RenderShadowMap = false;
+        passContext.LightViewProj = Matrix4x4.Identity;
+        passContext.ShadowSrvArray = _shadowSrvArray;
+        passContext.SamplerArray = _samplerArray;
+        passContext.ShadowSamplerArray = _shadowSamplerArray;
+        passContext.DynamicTextures = _dynamicTextureManager.Textures;
+        passContext.View = view;
+        passContext.Proj = proj;
+        passContext.CamPos = camPos;
+        passContext.CbPerFrame = _cbPerFrame!;
+        passContext.CbPerObject = _cbPerObject!;
+        passContext.CbPerMaterialCore = _cbPerMaterialCore!;
+        passContext.CbSceneEffects = _cbSceneEffects!;
+        passContext.CbPostEffects = _cbPostEffects!;
+        passContext.CbPerFrameArray = _cbPerFrameArray;
+        passContext.CbPerObjectArray = _cbPerObjectArray;
+        passContext.CbPerMaterialArray = _cbPerMaterialArray;
+        passContext.CbSceneEffectsArray = _cbSceneEffectsArray;
+        passContext.CbPostEffectsArray = _cbPostEffectsArray;
+        passContext.IsWireframe = isWireframe;
+        passContext.IsInteracting = isInteracting;
+        passContext.IsGridVisible = isGridVisible;
+        passContext.IsInfiniteGrid = isInfiniteGrid;
+        passContext.GridScale = gridScale;
+        passContext.ApiObjectRenderer = (!string.IsNullOrEmpty(_targetInstanceId) && _apiObjectRenderer != null) ? _apiObjectRenderer : null;
+        passContext.DrawManagerAdapter = !string.IsNullOrEmpty(_targetInstanceId) ? GetOrCreateAdapter() : null;
+        passContext.MainRtv = _deviceManager.Rtv!;
+        passContext.MainDsv = _deviceManager.Dsv!;
+        passContext.ViewportWidth = _deviceManager.ViewportWidth;
+        passContext.ViewportHeight = _deviceManager.ViewportHeight;
 
         if (passContext.DrawManagerAdapter != null)
         {
             passContext.DrawManagerAdapter.PurgeStaleEntries();
         }
 
-        foreach(var pass in _passes)
+        for (int i = 0; i < _passes.Length; i++)
         {
-            pass.Render(passContext);
+            _passes[i].Render(passContext);
         }
 
         ClearAllResourceBindings();
@@ -345,7 +346,7 @@ internal sealed class RenderService : IDisposable
         }
     }
 
-    private void ComputeLayerTransforms(IReadOnlyList<LayerRenderData> layers, Matrix4x4 view, Matrix4x4 proj)
+    private void ComputeLayerTransforms(List<LayerRenderData> layers, Matrix4x4 view, Matrix4x4 proj)
     {
         var settings = PluginSettings.Instance;
         EnsureLayerArrayCapacity(layers.Count);
@@ -426,7 +427,7 @@ internal sealed class RenderService : IDisposable
         return (gridColor, axisColor);
     }
 
-    private void ClassifyPartsByOpacity(IReadOnlyList<LayerRenderData> layers, System.Numerics.Vector3 camPos)
+    private void ClassifyPartsByOpacity(List<LayerRenderData> layers, System.Numerics.Vector3 camPos)
     {
         _opaquePartList.Clear();
         _transparentParts.Clear();

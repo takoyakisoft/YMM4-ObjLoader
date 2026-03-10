@@ -7,6 +7,10 @@ namespace ObjLoader.Rendering.Renderers
 {
     internal static class GizmoBuilder
     {
+        private static readonly int[] CubeIndices = { 0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0 };
+        private static readonly int[] FrustumFaceIndices = { 0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 4, 3, 2, 4, 2, 1 };
+        private static readonly int[] QuadIndicesTemplate = { 0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2 };
+
         public static void BuildGizmos(
             MeshGeometry3D gizmoX, MeshGeometry3D gizmoY, MeshGeometry3D gizmoZ,
             MeshGeometry3D gizmoXY, MeshGeometry3D gizmoYZ, MeshGeometry3D gizmoZX,
@@ -180,10 +184,8 @@ namespace ObjLoader.Rendering.Renderers
             Point3D p3 = center - u * s + v * s;
             int idx = mesh.Positions.Count;
             mesh.Positions.Add(p0); mesh.Positions.Add(p1); mesh.Positions.Add(p2); mesh.Positions.Add(p3);
-            mesh.TriangleIndices.Add(idx); mesh.TriangleIndices.Add(idx + 1); mesh.TriangleIndices.Add(idx + 2);
-            mesh.TriangleIndices.Add(idx); mesh.TriangleIndices.Add(idx + 2); mesh.TriangleIndices.Add(idx + 3);
-            mesh.TriangleIndices.Add(idx); mesh.TriangleIndices.Add(idx + 2); mesh.TriangleIndices.Add(idx + 1);
-            mesh.TriangleIndices.Add(idx); mesh.TriangleIndices.Add(idx + 3); mesh.TriangleIndices.Add(idx + 2);
+            for (int i = 0; i < QuadIndicesTemplate.Length; i++)
+                mesh.TriangleIndices.Add(idx + QuadIndicesTemplate[i]);
         }
 
         private static void AddFrustumMesh(MeshGeometry3D mesh, Point3D o, Point3D tr, Point3D tl, Point3D bl, Point3D br)
@@ -195,8 +197,8 @@ namespace ObjLoader.Rendering.Renderers
 
             int idx = mesh.Positions.Count;
             mesh.Positions.Add(o); mesh.Positions.Add(tr); mesh.Positions.Add(tl); mesh.Positions.Add(bl); mesh.Positions.Add(br);
-            int[] indices = { 0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 4, 3, 2, 4, 2, 1 };
-            foreach (var i in indices) mesh.TriangleIndices.Add(idx + i);
+            for (int i = 0; i < FrustumFaceIndices.Length; i++)
+                mesh.TriangleIndices.Add(idx + FrustumFaceIndices[i]);
         }
 
         private static void AddCubeToMesh(MeshGeometry3D mesh, Point3D center, double size)
@@ -205,8 +207,8 @@ namespace ObjLoader.Rendering.Renderers
             Point3D[] p = { new(center.X - s, center.Y - s, center.Z + s), new(center.X + s, center.Y - s, center.Z + s), new(center.X + s, center.Y + s, center.Z + s), new(center.X - s, center.Y + s, center.Z + s), new(center.X - s, center.Y - s, center.Z - s), new(center.X + s, center.Y - s, center.Z - s), new(center.X + s, center.Y + s, center.Z - s), new(center.X - s, center.Y + s, center.Z - s) };
             int idx = mesh.Positions.Count;
             foreach (var pt in p) mesh.Positions.Add(pt);
-            int[] indices = { 0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0 };
-            foreach (var i in indices) mesh.TriangleIndices.Add(idx + i);
+            for (int i = 0; i < CubeIndices.Length; i++)
+                mesh.TriangleIndices.Add(idx + CubeIndices[i]);
         }
 
         private static void AddLineToMesh(MeshGeometry3D mesh, Point3D start, Point3D end, double thickness)
@@ -224,8 +226,8 @@ namespace ObjLoader.Rendering.Renderers
             mesh.Positions.Add(start + p1 + p2); mesh.Positions.Add(start - p1 + p2);
             mesh.Positions.Add(end - p1 - p2); mesh.Positions.Add(end + p1 - p2);
             mesh.Positions.Add(end + p1 + p2); mesh.Positions.Add(end - p1 + p2);
-            int[] indices = { 0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0 };
-            foreach (var i in indices) mesh.TriangleIndices.Add(idx + i);
+            for (int i = 0; i < CubeIndices.Length; i++)
+                mesh.TriangleIndices.Add(idx + CubeIndices[i]);
         }
 
         private static void AddSphereToMesh(MeshGeometry3D mesh, Point3D center, double radius, int tDiv, int pDiv)

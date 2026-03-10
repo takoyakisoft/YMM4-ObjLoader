@@ -39,8 +39,11 @@ internal sealed class OpaqueRenderPass : IRenderPass
         context.DeviceContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
 
         int lastLayerIndex = -1;
-        foreach (var (layerIndex, partIndex) in context.OpaqueParts)
+        for (int i = 0; i < context.OpaqueParts.Count; i++)
         {
+            var partsInfo = context.OpaqueParts[i];
+            int layerIndex = partsInfo.LayerIndex;
+            int partIndex = partsInfo.PartIndex;
             var layer = context.Layers[layerIndex];
             var modelResource = layer.Resource;
 

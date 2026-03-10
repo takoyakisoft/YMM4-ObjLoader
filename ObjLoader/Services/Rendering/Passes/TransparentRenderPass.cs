@@ -15,9 +15,9 @@ internal sealed class TransparentRenderPass : IRenderPass
     {
         if (context.TransparentParts.Count == 0) return;
 
-        if (context.TransparentParts is List<TransparentPart> list)
+        if (context.TransparentParts.Count > 0)
         {
-            list.Sort();
+            context.TransparentParts.Sort();
         }
 
         context.DeviceContext.OMSetDepthStencilState(context.Resources.DepthStencilStateNoWrite);
@@ -27,8 +27,9 @@ internal sealed class TransparentRenderPass : IRenderPass
         }
 
         int lastLayerIndex = -1;
-        foreach (var tp in context.TransparentParts)
+        for (int i = 0; i < context.TransparentParts.Count; i++)
         {
+            var tp = context.TransparentParts[i];
             var layer = context.Layers[tp.LayerIndex];
             if (layer.VisibleParts != null && !layer.VisibleParts.Contains(tp.PartIndex)) continue;
 

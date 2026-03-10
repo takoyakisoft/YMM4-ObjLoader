@@ -13,8 +13,8 @@ internal sealed class SceneHierarchyResolver
     private readonly Dictionary<string, HierarchyNode> _localPlacementsBuffer = new();
     private readonly Dictionary<string, Matrix4x4> _globalPlacementsBuffer = new();
 
-    public IReadOnlyDictionary<string, HierarchyNode> LocalPlacements => _localPlacementsBuffer;
-    public IReadOnlyDictionary<string, Matrix4x4> GlobalPlacements => _globalPlacementsBuffer;
+    public Dictionary<string, HierarchyNode> LocalPlacements => _localPlacementsBuffer;
+    public Dictionary<string, Matrix4x4> GlobalPlacements => _globalPlacementsBuffer;
 
     public double BuildLocalPlacements(
         ObjLoaderParameter parameter,
