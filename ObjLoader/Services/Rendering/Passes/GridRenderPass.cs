@@ -49,21 +49,29 @@ internal sealed class GridRenderPass : IRenderPass
             World = Matrix4x4.Transpose(gridWorld)
         };
 
-        CBPerMaterial cbMaterialObj = default;
+        CBPerMaterial cbCoreObj = default;
+        CBSceneEffects cbSceneObj = default;
+        CBPostEffects cbPostObj = default;
 
         context.CbPerFrame.Update(context.DeviceContext, ref cbFrameObj);
         context.CbPerObject.Update(context.DeviceContext, ref cbObjectObj);
-        context.CbPerMaterial.Update(context.DeviceContext, ref cbMaterialObj);
+        context.CbPerMaterialCore.Update(context.DeviceContext, ref cbCoreObj);
+        context.CbSceneEffects.Update(context.DeviceContext, ref cbSceneObj);
+        context.CbPostEffects.Update(context.DeviceContext, ref cbPostObj);
 
         context.CbPerFrameArray[0] = context.CbPerFrame.Buffer;
         context.CbPerObjectArray[0] = context.CbPerObject.Buffer;
-        context.CbPerMaterialArray[0] = context.CbPerMaterial.Buffer;
+        context.CbPerMaterialArray[0] = context.CbPerMaterialCore.Buffer;
+        context.CbSceneEffectsArray[0] = context.CbSceneEffects.Buffer;
+        context.CbPostEffectsArray[0] = context.CbPostEffects.Buffer;
 
-        context.DeviceContext.VSSetConstantBuffers(0, 1, context.CbPerFrameArray);
-        context.DeviceContext.PSSetConstantBuffers(0, 1, context.CbPerFrameArray);
-        context.DeviceContext.VSSetConstantBuffers(1, 1, context.CbPerObjectArray);
-        context.DeviceContext.PSSetConstantBuffers(1, 1, context.CbPerObjectArray);
-        context.DeviceContext.PSSetConstantBuffers(2, 1, context.CbPerMaterialArray);
+        context.DeviceContext.VSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, context.CbPerFrameArray);
+        context.DeviceContext.PSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, context.CbPerFrameArray);
+        context.DeviceContext.VSSetConstantBuffers(RenderingConstants.CbSlotPerObject, 1, context.CbPerObjectArray);
+        context.DeviceContext.PSSetConstantBuffers(RenderingConstants.CbSlotPerObject, 1, context.CbPerObjectArray);
+        context.DeviceContext.PSSetConstantBuffers(RenderingConstants.CbSlotPerMaterial, 1, context.CbPerMaterialArray);
+        context.DeviceContext.PSSetConstantBuffers(RenderingConstants.CbSlotSceneEffects, 1, context.CbSceneEffectsArray);
+        context.DeviceContext.PSSetConstantBuffers(RenderingConstants.CbSlotPostEffects, 1, context.CbPostEffectsArray);
 
         context.DeviceContext.Draw(6, 0);
 

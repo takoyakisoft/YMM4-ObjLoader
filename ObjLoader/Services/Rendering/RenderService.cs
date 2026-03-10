@@ -39,13 +39,17 @@ internal sealed class RenderService : IDisposable
 
     private ConstantBuffer<CBPerFrame>? _cbPerFrame;
     private ConstantBuffer<CBPerObject>? _cbPerObject;
-    private ConstantBuffer<CBPerMaterial>? _cbPerMaterial;
+    private ConstantBuffer<CBPerMaterial>? _cbPerMaterialCore;
+    private ConstantBuffer<CBSceneEffects>? _cbSceneEffects;
+    private ConstantBuffer<CBPostEffects>? _cbPostEffects;
 
     private readonly ID3D11ShaderResourceView[] _nullSrv = new ID3D11ShaderResourceView[1];
     private readonly ID3D11ShaderResourceView[] _nullSrv4 = new ID3D11ShaderResourceView[4];
     private readonly ID3D11Buffer[] _cbPerFrameArray = new ID3D11Buffer[1];
     private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
     private readonly ID3D11Buffer[] _cbPerMaterialArray = new ID3D11Buffer[1];
+    private readonly ID3D11Buffer[] _cbSceneEffectsArray = new ID3D11Buffer[1];
+    private readonly ID3D11Buffer[] _cbPostEffectsArray = new ID3D11Buffer[1];
     private readonly ID3D11SamplerState[] _samplerArray = new ID3D11SamplerState[1];
     private readonly ID3D11SamplerState[] _shadowSamplerArray = new ID3D11SamplerState[1];
     private readonly ID3D11ShaderResourceView[] _shadowSrvArray = new ID3D11ShaderResourceView[1];
@@ -116,11 +120,15 @@ internal sealed class RenderService : IDisposable
 
         _cbPerFrame = new ConstantBuffer<CBPerFrame>(device);
         _cbPerObject = new ConstantBuffer<CBPerObject>(device);
-        _cbPerMaterial = new ConstantBuffer<CBPerMaterial>(device);
+        _cbPerMaterialCore = new ConstantBuffer<CBPerMaterial>(device);
+        _cbSceneEffects = new ConstantBuffer<CBSceneEffects>(device);
+        _cbPostEffects = new ConstantBuffer<CBPostEffects>(device);
 
         _cbPerFrameArray[0] = _cbPerFrame.Buffer;
         _cbPerObjectArray[0] = _cbPerObject.Buffer;
-        _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
+        _cbPerMaterialArray[0] = _cbPerMaterialCore.Buffer;
+        _cbSceneEffectsArray[0] = _cbSceneEffects.Buffer;
+        _cbPostEffectsArray[0] = _cbPostEffects.Buffer;
 
         _samplerArray[0] = _d3dResources.SamplerState;
         _shadowSamplerArray[0] = _d3dResources.ShadowSampler;
@@ -235,7 +243,9 @@ internal sealed class RenderService : IDisposable
         
         if (_cbPerFrameArray[0] == null && _cbPerFrame != null) _cbPerFrameArray[0] = _cbPerFrame.Buffer;
         if (_cbPerObjectArray[0] == null && _cbPerObject != null) _cbPerObjectArray[0] = _cbPerObject.Buffer;
-        if (_cbPerMaterialArray[0] == null && _cbPerMaterial != null) _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
+        if (_cbPerMaterialArray[0] == null && _cbPerMaterialCore != null) _cbPerMaterialArray[0] = _cbPerMaterialCore.Buffer;
+        if (_cbSceneEffectsArray[0] == null && _cbSceneEffects != null) _cbSceneEffectsArray[0] = _cbSceneEffects.Buffer;
+        if (_cbPostEffectsArray[0] == null && _cbPostEffects != null) _cbPostEffectsArray[0] = _cbPostEffects.Buffer;
 
         if (_samplerArray[0] == null) _samplerArray[0] = _d3dResources!.SamplerState;
         if (_shadowSamplerArray[0] == null) _shadowSamplerArray[0] = _d3dResources!.ShadowSampler;
@@ -289,10 +299,14 @@ internal sealed class RenderService : IDisposable
             CamPos = camPos,
             CbPerFrame = _cbPerFrame!,
             CbPerObject = _cbPerObject!,
-            CbPerMaterial = _cbPerMaterial!,
+            CbPerMaterialCore = _cbPerMaterialCore!,
+            CbSceneEffects = _cbSceneEffects!,
+            CbPostEffects = _cbPostEffects!,
             CbPerFrameArray = _cbPerFrameArray,
             CbPerObjectArray = _cbPerObjectArray,
             CbPerMaterialArray = _cbPerMaterialArray,
+            CbSceneEffectsArray = _cbSceneEffectsArray,
+            CbPostEffectsArray = _cbPostEffectsArray,
             IsWireframe = isWireframe,
             IsInteracting = isInteracting,
             IsGridVisible = isGridVisible,
@@ -487,7 +501,9 @@ internal sealed class RenderService : IDisposable
 
         _cbPerFrame?.Dispose(); _cbPerFrame = null;
         _cbPerObject?.Dispose(); _cbPerObject = null;
-        _cbPerMaterial?.Dispose(); _cbPerMaterial = null;
+        _cbPerMaterialCore?.Dispose(); _cbPerMaterialCore = null;
+        _cbSceneEffects?.Dispose(); _cbSceneEffects = null;
+        _cbPostEffects?.Dispose(); _cbPostEffects = null;
 
         _localDrawAdapter?.Dispose();
         _localDrawAdapter = null;

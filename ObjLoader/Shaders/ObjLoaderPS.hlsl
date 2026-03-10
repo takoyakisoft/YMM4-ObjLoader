@@ -32,12 +32,24 @@ cbuffer CBPerMaterial : register(b2)
     float SpecularIntensity;
     float Shininess;
     float4 ToonParams;
+    float4 PbrParams;
+}
+
+cbuffer CBSceneEffects : register(b3)
+{
     float4 RimParams;
     float4 RimColor;
     float4 OutlineParams;
     float4 OutlineColor;
     float4 FogParams;
     float4 FogColor;
+    float4 IblParams;
+    float4 SsrParams;
+    float4 SsrParams2;
+}
+
+cbuffer CBPostEffects : register(b4)
+{
     float4 ColorCorrParams;
     float4 VignetteParams;
     float4 VignetteColor;
@@ -46,10 +58,6 @@ cbuffer CBPerMaterial : register(b2)
     float4 MonoParams;
     float4 MonoColor;
     float4 PosterizeParams;
-    float4 PbrParams;
-    float4 IblParams;
-    float4 SsrParams;
-    float4 SsrParams2;
 }
 
 Texture2D tex : register(t0);

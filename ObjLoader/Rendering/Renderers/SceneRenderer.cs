@@ -35,12 +35,16 @@ namespace ObjLoader.Rendering.Renderers
 
         private ConstantBuffer<CBPerFrame>? _cbPerFrame;
         private ConstantBuffer<CBPerObject>? _cbPerObject;
-        private ConstantBuffer<CBPerMaterial>? _cbPerMaterial;
+        private ConstantBuffer<CBPerMaterial>? _cbPerMaterialCore;
+        private ConstantBuffer<CBSceneEffects>? _cbSceneEffects;
+        private ConstantBuffer<CBPostEffects>? _cbPostEffects;
         private ApiObjectRenderer? _apiObjectRenderer;
 
         private readonly ID3D11Buffer[] _cbPerFrameArray = new ID3D11Buffer[1];
         private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
         private readonly ID3D11Buffer[] _cbPerMaterialArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbSceneEffectsArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbPostEffectsArray = new ID3D11Buffer[1];
 
         private readonly ID3D11Buffer[] _vbArray = new ID3D11Buffer[1];
         private readonly int[] _strideArray = new int[1];
@@ -87,7 +91,9 @@ namespace ObjLoader.Rendering.Renderers
 
             _cbPerFrame = new ConstantBuffer<CBPerFrame>(_devices.D3D.Device);
             _cbPerObject = new ConstantBuffer<CBPerObject>(_devices.D3D.Device);
-            _cbPerMaterial = new ConstantBuffer<CBPerMaterial>(_devices.D3D.Device);
+            _cbPerMaterialCore = new ConstantBuffer<CBPerMaterial>(_devices.D3D.Device);
+            _cbSceneEffects = new ConstantBuffer<CBSceneEffects>(_devices.D3D.Device);
+            _cbPostEffects = new ConstantBuffer<CBPostEffects>(_devices.D3D.Device);
             _apiObjectRenderer = new ApiObjectRenderer(_devices.D3D.Device, _resources);
         }
 
@@ -345,7 +351,7 @@ namespace ObjLoader.Rendering.Renderers
             context.RSSetViewport(0, 0, width, height);
             context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
 
-            if (_cbPerFrame == null || _cbPerObject == null || _cbPerMaterial == null) return;
+            if (_cbPerFrame == null || _cbPerObject == null || _cbPerMaterialCore == null || _cbSceneEffects == null || _cbPostEffects == null) return;
 
             _samplerArray[0] = _resources.SamplerState;
 
@@ -480,7 +486,7 @@ namespace ObjLoader.Rendering.Renderers
                     var uiColorVec = hasTexture ? Vector4.One : new Vector4(state.BaseColor.ScR, state.BaseColor.ScG, state.BaseColor.ScB, state.BaseColor.ScA);
                     var partColor = resolvedBaseColor * uiColorVec;
 
-                    CBPerMaterial cbMaterial = ConstantBufferFactory.CreatePerMaterial(
+                    var (cbCore, cbScene, cbPost) = ConstantBufferFactory.CreatePerMaterial(
                         wId,
                         partColor,
                         state.IsLightEnabled,
@@ -489,9 +495,15 @@ namespace ObjLoader.Rendering.Renderers
                         roughness,
                         metallic);
 
-                    _cbPerMaterial.Update(context, ref cbMaterial);
-                    _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
-                    context.PSSetConstantBuffers(2, 1, _cbPerMaterialArray);
+                    _cbPerMaterialCore.Update(context, ref cbCore);
+                    _cbSceneEffects.Update(context, ref cbScene);
+                    _cbPostEffects.Update(context, ref cbPost);
+                    _cbPerMaterialArray[0] = _cbPerMaterialCore.Buffer;
+                    _cbSceneEffectsArray[0] = _cbSceneEffects.Buffer;
+                    _cbPostEffectsArray[0] = _cbPostEffects.Buffer;
+                    context.PSSetConstantBuffers(RenderingConstants.CbSlotPerMaterial, 1, _cbPerMaterialArray);
+                    context.PSSetConstantBuffers(RenderingConstants.CbSlotSceneEffects, 1, _cbSceneEffectsArray);
+                    context.PSSetConstantBuffers(RenderingConstants.CbSlotPostEffects, 1, _cbPostEffectsArray);
 
                     context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
                 }
@@ -508,7 +520,9 @@ namespace ObjLoader.Rendering.Renderers
             _apiObjectRenderer?.Dispose();
             _cbPerFrame?.Dispose();
             _cbPerObject?.Dispose();
-            _cbPerMaterial?.Dispose();
+            _cbPerMaterialCore?.Dispose();
+            _cbSceneEffects?.Dispose();
+            _cbPostEffects?.Dispose();
         }
     }
 }

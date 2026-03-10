@@ -9,7 +9,7 @@ namespace ObjLoader.Rendering.Core.Buffers
         private static Vector4 ToVec4(Color c) =>
             new(c.R / 255.0f, c.G / 255.0f, c.B / 255.0f, c.A / 255.0f);
 
-        public static CBPerMaterial CreatePerMaterial(
+        public static (CBPerMaterial Core, CBSceneEffects Scene, CBPostEffects Post) CreatePerMaterial(
             int worldId,
             Vector4 baseColor,
             bool lightEnabled,
@@ -18,35 +18,45 @@ namespace ObjLoader.Rendering.Core.Buffers
             float roughness,
             float metallic)
         {
-            var settings = PluginSettings.Instance;
+            var s = PluginSettings.Instance;
 
-            return new CBPerMaterial
+            var core = new CBPerMaterial
             {
                 BaseColor = baseColor,
                 LightEnabled = lightEnabled ? 1.0f : 0.0f,
                 DiffuseIntensity = diffuseIntensity,
-                SpecularIntensity = (float)settings.GetSpecularIntensity(worldId),
+                SpecularIntensity = (float)s.GetSpecularIntensity(worldId),
                 Shininess = shininess,
-                ToonParams = new Vector4(settings.GetToonEnabled(worldId) ? 1 : 0, settings.GetToonSteps(worldId), (float)settings.GetToonSmoothness(worldId), 0),
-                RimParams = new Vector4(settings.GetRimEnabled(worldId) ? 1 : 0, (float)settings.GetRimIntensity(worldId), (float)settings.GetRimPower(worldId), 0),
-                RimColor = ToVec4(settings.GetRimColor(worldId)),
-                OutlineParams = new Vector4(settings.GetOutlineEnabled(worldId) ? 1 : 0, (float)settings.GetOutlineWidth(worldId), (float)settings.GetOutlinePower(worldId), 0),
-                OutlineColor = ToVec4(settings.GetOutlineColor(worldId)),
-                FogParams = new Vector4(settings.GetFogEnabled(worldId) ? 1 : 0, (float)settings.GetFogStart(worldId), (float)settings.GetFogEnd(worldId), (float)settings.GetFogDensity(worldId)),
-                FogColor = ToVec4(settings.GetFogColor(worldId)),
-                ColorCorrParams = new Vector4((float)settings.GetSaturation(worldId), (float)settings.GetContrast(worldId), (float)settings.GetGamma(worldId), (float)settings.GetBrightnessPost(worldId)),
-                VignetteParams = new Vector4(settings.GetVignetteEnabled(worldId) ? 1 : 0, (float)settings.GetVignetteIntensity(worldId), (float)settings.GetVignetteRadius(worldId), (float)settings.GetVignetteSoftness(worldId)),
-                VignetteColor = ToVec4(settings.GetVignetteColor(worldId)),
-                ScanlineParams = new Vector4(settings.GetScanlineEnabled(worldId) ? 1 : 0, (float)settings.GetScanlineIntensity(worldId), (float)settings.GetScanlineFrequency(worldId), settings.GetScanlinePost(worldId) ? 1 : 0),
-                ChromAbParams = new Vector4(settings.GetChromAbEnabled(worldId) ? 1 : 0, (float)settings.GetChromAbIntensity(worldId), 0, 0),
-                MonoParams = new Vector4(settings.GetMonochromeEnabled(worldId) ? 1 : 0, (float)settings.GetMonochromeMix(worldId), 0, 0),
-                MonoColor = ToVec4(settings.GetMonochromeColor(worldId)),
-                PosterizeParams = new Vector4(settings.GetPosterizeEnabled(worldId) ? 1 : 0, settings.GetPosterizeLevels(worldId), 0, 0),
-                PbrParams = new Vector4(metallic, roughness, 1.0f, 0),
-                IblParams = new Vector4((float)settings.GetIBLIntensity(worldId), 6.0f, 0, 0),
-                SsrParams = new Vector4(settings.GetSSREnabled(worldId) ? 1 : 0, (float)settings.GetSSRStep(worldId), (float)settings.GetSSRMaxDist(worldId), (float)settings.GetSSRMaxSteps(worldId)),
-                SsrParams2 = new Vector4((float)settings.GetSSRMaxSteps(worldId), (float)settings.GetSSRThickness(worldId), 0, 0)
+                ToonParams = new Vector4(s.GetToonEnabled(worldId) ? 1 : 0, s.GetToonSteps(worldId), (float)s.GetToonSmoothness(worldId), 0),
+                PbrParams = new Vector4(metallic, roughness, 1.0f, 0)
             };
+
+            var scene = new CBSceneEffects
+            {
+                RimParams = new Vector4(s.GetRimEnabled(worldId) ? 1 : 0, (float)s.GetRimIntensity(worldId), (float)s.GetRimPower(worldId), 0),
+                RimColor = ToVec4(s.GetRimColor(worldId)),
+                OutlineParams = new Vector4(s.GetOutlineEnabled(worldId) ? 1 : 0, (float)s.GetOutlineWidth(worldId), (float)s.GetOutlinePower(worldId), 0),
+                OutlineColor = ToVec4(s.GetOutlineColor(worldId)),
+                FogParams = new Vector4(s.GetFogEnabled(worldId) ? 1 : 0, (float)s.GetFogStart(worldId), (float)s.GetFogEnd(worldId), (float)s.GetFogDensity(worldId)),
+                FogColor = ToVec4(s.GetFogColor(worldId)),
+                IblParams = new Vector4((float)s.GetIBLIntensity(worldId), 6.0f, 0, 0),
+                SsrParams = new Vector4(s.GetSSREnabled(worldId) ? 1 : 0, (float)s.GetSSRStep(worldId), (float)s.GetSSRMaxDist(worldId), (float)s.GetSSRMaxSteps(worldId)),
+                SsrParams2 = new Vector4((float)s.GetSSRMaxSteps(worldId), (float)s.GetSSRThickness(worldId), 0, 0)
+            };
+
+            var post = new CBPostEffects
+            {
+                ColorCorrParams = new Vector4((float)s.GetSaturation(worldId), (float)s.GetContrast(worldId), (float)s.GetGamma(worldId), (float)s.GetBrightnessPost(worldId)),
+                VignetteParams = new Vector4(s.GetVignetteEnabled(worldId) ? 1 : 0, (float)s.GetVignetteIntensity(worldId), (float)s.GetVignetteRadius(worldId), (float)s.GetVignetteSoftness(worldId)),
+                VignetteColor = ToVec4(s.GetVignetteColor(worldId)),
+                ScanlineParams = new Vector4(s.GetScanlineEnabled(worldId) ? 1 : 0, (float)s.GetScanlineIntensity(worldId), (float)s.GetScanlineFrequency(worldId), s.GetScanlinePost(worldId) ? 1 : 0),
+                ChromAbParams = new Vector4(s.GetChromAbEnabled(worldId) ? 1 : 0, (float)s.GetChromAbIntensity(worldId), 0, 0),
+                MonoParams = new Vector4(s.GetMonochromeEnabled(worldId) ? 1 : 0, (float)s.GetMonochromeMix(worldId), 0, 0),
+                MonoColor = ToVec4(s.GetMonochromeColor(worldId)),
+                PosterizeParams = new Vector4(s.GetPosterizeEnabled(worldId) ? 1 : 0, s.GetPosterizeLevels(worldId), 0, 0)
+            };
+
+            return (core, scene, post);
         }
 
         public static CBPerFrame CreatePerFrameForScene(

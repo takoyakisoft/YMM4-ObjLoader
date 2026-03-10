@@ -20,7 +20,9 @@ namespace ObjLoader.Rendering.Renderers
         private readonly ID3D11Buffer _billboardIb;
         private readonly ConstantBuffer<CBPerFrame> _cbPerFrame;
         private readonly ConstantBuffer<CBPerObject> _cbPerObject;
-        private readonly ConstantBuffer<CBPerMaterial> _cbPerMaterial;
+        private readonly ConstantBuffer<CBPerMaterial> _cbPerMaterialCore;
+        private readonly ConstantBuffer<CBSceneEffects> _cbSceneEffects;
+        private readonly ConstantBuffer<CBPostEffects> _cbPostEffects;
 
         private readonly ID3D11Buffer[] _vbArray = new ID3D11Buffer[1];
         private readonly int[] _strideArray = new int[1];
@@ -29,6 +31,8 @@ namespace ObjLoader.Rendering.Renderers
         private readonly ID3D11Buffer[] _cbPerFrameArray = new ID3D11Buffer[1];
         private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
         private readonly ID3D11Buffer[] _cbPerMaterialArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbSceneEffectsArray = new ID3D11Buffer[1];
+        private readonly ID3D11Buffer[] _cbPostEffectsArray = new ID3D11Buffer[1];
         private readonly ID3D11ShaderResourceView[] _nullSrv1 = new ID3D11ShaderResourceView[1];
 
         private static readonly Matrix4x4[] _emptyLightViewProjs = new Matrix4x4[D3DResources.CascadeCount];
@@ -61,7 +65,23 @@ namespace ObjLoader.Rendering.Renderers
 
             _cbPerFrame = new ConstantBuffer<CBPerFrame>(device);
             _cbPerObject = new ConstantBuffer<CBPerObject>(device);
-            _cbPerMaterial = new ConstantBuffer<CBPerMaterial>(device);
+            _cbPerMaterialCore = new ConstantBuffer<CBPerMaterial>(device);
+            _cbSceneEffects = new ConstantBuffer<CBSceneEffects>(device);
+            _cbPostEffects = new ConstantBuffer<CBPostEffects>(device);
+        }
+
+        private void BindMaterialBuffers(ID3D11DeviceContext context, int worldId, Vector4 baseColor, bool lightEnabled, float diffuse, float shininess, float roughness, float metallic)
+        {
+            var (cbCore, cbScene, cbPost) = ConstantBufferFactory.CreatePerMaterial(worldId, baseColor, lightEnabled, diffuse, shininess, roughness, metallic);
+            _cbPerMaterialCore.Update(context, ref cbCore);
+            _cbSceneEffects.Update(context, ref cbScene);
+            _cbPostEffects.Update(context, ref cbPost);
+            _cbPerMaterialArray[0] = _cbPerMaterialCore.Buffer;
+            _cbSceneEffectsArray[0] = _cbSceneEffects.Buffer;
+            _cbPostEffectsArray[0] = _cbPostEffects.Buffer;
+            context.PSSetConstantBuffers(RenderingConstants.CbSlotPerMaterial, 1, _cbPerMaterialArray);
+            context.PSSetConstantBuffers(RenderingConstants.CbSlotSceneEffects, 1, _cbSceneEffectsArray);
+            context.PSSetConstantBuffers(RenderingConstants.CbSlotPostEffects, 1, _cbPostEffectsArray);
         }
 
         public void RenderApiObjects(ID3D11DeviceContext context, ISceneDrawManager drawManager, Matrix4x4 viewProj, Vector4 camPos, Matrix4x4[]? lightViewProjs, float[]? cascadeSplits, bool shadowValid, int activeWorldId, bool bindEnvironment)
@@ -86,8 +106,8 @@ namespace ObjLoader.Rendering.Renderers
 
             _cbPerFrame.Update(context, ref cbFrame);
             _cbPerFrameArray[0] = _cbPerFrame.Buffer;
-            context.VSSetConstantBuffers(0, 1, _cbPerFrameArray);
-            context.PSSetConstantBuffers(0, 1, _cbPerFrameArray);
+            context.VSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, _cbPerFrameArray);
+            context.PSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, _cbPerFrameArray);
 
             for (int i = 0; i < externalObjects.Count; i++)
             {
@@ -105,7 +125,7 @@ namespace ObjLoader.Rendering.Renderers
                 CBPerObject cbObject = new CBPerObject { WorldViewProj = Matrix4x4.Transpose(wvp), World = Matrix4x4.Transpose(world) };
                 _cbPerObject.Update(context, ref cbObject);
                 _cbPerObjectArray[0] = _cbPerObject.Buffer;
-                context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
+                context.VSSetConstantBuffers(RenderingConstants.CbSlotPerObject, 1, _cbPerObjectArray);
 
                 _vbArray[0] = resource.VertexBuffer;
                 _strideArray[0] = Unsafe.SizeOf<ObjVertex>();
@@ -120,14 +140,7 @@ namespace ObjLoader.Rendering.Renderers
                     _srvSlot0[0] = texView ?? _resources.WhiteTextureView!;
                     context.PSSetShaderResources(RenderingConstants.SlotStandardTexture, 1, _srvSlot0);
 
-                    CBPerMaterial cbMaterial = ConstantBufferFactory.CreatePerMaterial(
-                        0,
-                        texView != null ? Vector4.One : part.BaseColor,
-                        true, 1.0f, 32.0f, 0.5f, 0.0f);
-
-                    _cbPerMaterial.Update(context, ref cbMaterial);
-                    _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
-                    context.PSSetConstantBuffers(2, 1, _cbPerMaterialArray);
+                    BindMaterialBuffers(context, 0, texView != null ? Vector4.One : part.BaseColor, true, 1.0f, 32.0f, 0.5f, 0.0f);
 
                     context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
                 }
@@ -166,8 +179,8 @@ namespace ObjLoader.Rendering.Renderers
 
             _cbPerFrame.Update(context, ref cbFrame);
             _cbPerFrameArray[0] = _cbPerFrame.Buffer;
-            context.VSSetConstantBuffers(0, 1, _cbPerFrameArray);
-            context.PSSetConstantBuffers(0, 1, _cbPerFrameArray);
+            context.VSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, _cbPerFrameArray);
+            context.PSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, _cbPerFrameArray);
 
             Vector3 camPos3 = new Vector3(camPos.X, camPos.Y, camPos.Z);
 
@@ -197,20 +210,13 @@ namespace ObjLoader.Rendering.Renderers
                 CBPerObject cbObject = new CBPerObject { WorldViewProj = Matrix4x4.Transpose(wvp), World = Matrix4x4.Transpose(world) };
                 _cbPerObject.Update(context, ref cbObject);
                 _cbPerObjectArray[0] = _cbPerObject.Buffer;
-                context.VSSetConstantBuffers(1, 1, _cbPerObjectArray);
+                context.VSSetConstantBuffers(RenderingConstants.CbSlotPerObject, 1, _cbPerObjectArray);
 
                 _srvSlot0[0] = srv;
                 context.PSSetShaderResources(RenderingConstants.SlotStandardTexture, 1, _srvSlot0);
 
                 var pCol = b.Desc.BlendColor * b.Desc.Opacity;
-
-                CBPerMaterial cbMaterial = ConstantBufferFactory.CreatePerMaterial(
-                    0,
-                    pCol,
-                    false, 1.0f, 32.0f, 0.5f, 0.0f);
-                _cbPerMaterial.Update(context, ref cbMaterial);
-                _cbPerMaterialArray[0] = _cbPerMaterial.Buffer;
-                context.PSSetConstantBuffers(2, 1, _cbPerMaterialArray);
+                BindMaterialBuffers(context, 0, pCol, false, 1.0f, 32.0f, 0.5f, 0.0f);
 
                 context.DrawIndexed(6, 0, 0);
             }
@@ -227,7 +233,9 @@ namespace ObjLoader.Rendering.Renderers
             _billboardIb?.Dispose();
             _cbPerFrame.Dispose();
             _cbPerObject.Dispose();
-            _cbPerMaterial.Dispose();
+            _cbPerMaterialCore.Dispose();
+            _cbSceneEffects.Dispose();
+            _cbPostEffects.Dispose();
         }
     }
 }

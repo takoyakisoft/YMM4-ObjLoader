@@ -34,6 +34,12 @@ namespace ObjLoader.Rendering.Core
         public const int SlotStandardSampler = 0;
         public const int SlotShadowSampler = 1;
 
+        public const int CbSlotPerFrame = 0;
+        public const int CbSlotPerObject = 1;
+        public const int CbSlotPerMaterial = 2;
+        public const int CbSlotSceneEffects = 3;
+        public const int CbSlotPostEffects = 4;
+
         public static readonly Color4 ClearColorDark = new Color4(0.0f, 0.0f, 0.0f, 1.0f);
         public static readonly Vector4 GridColorDark = new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
         public static readonly Vector4 AxisColorDark = new Vector4(0.8f, 0.8f, 0.8f, 1.0f);

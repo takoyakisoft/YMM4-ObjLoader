@@ -37,10 +37,14 @@ internal class RenderPassContext
     
     public required ConstantBuffer<CBPerFrame> CbPerFrame { get; init; }
     public required ConstantBuffer<CBPerObject> CbPerObject { get; init; }
-    public required ConstantBuffer<CBPerMaterial> CbPerMaterial { get; init; }
+    public required ConstantBuffer<CBPerMaterial> CbPerMaterialCore { get; init; }
+    public required ConstantBuffer<CBSceneEffects> CbSceneEffects { get; init; }
+    public required ConstantBuffer<CBPostEffects> CbPostEffects { get; init; }
     public required ID3D11Buffer[] CbPerFrameArray { get; init; }
     public required ID3D11Buffer[] CbPerObjectArray { get; init; }
     public required ID3D11Buffer[] CbPerMaterialArray { get; init; }
+    public required ID3D11Buffer[] CbSceneEffectsArray { get; init; }
+    public required ID3D11Buffer[] CbPostEffectsArray { get; init; }
     
     public required bool IsWireframe { get; init; }
     public required bool IsInteracting { get; init; }

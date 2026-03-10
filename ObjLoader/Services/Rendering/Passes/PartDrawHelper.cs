@@ -61,7 +61,7 @@ internal static class PartDrawHelper
             World = Matrix4x4.Transpose(world)
         };
 
-        CBPerMaterial cbMaterialObj = ConstantBufferFactory.CreatePerMaterial(
+        var (cbCore, cbScene, cbPost) = ConstantBufferFactory.CreatePerMaterial(
             wId,
             material != null ? new Vector4(material.BaseColor.R / 255.0f, material.BaseColor.G / 255.0f, material.BaseColor.B / 255.0f, material.BaseColor.A / 255.0f) : part.BaseColor,
             layer.LightEnabled,
@@ -72,17 +72,23 @@ internal static class PartDrawHelper
 
         passContext.CbPerFrame.Update(context, ref cbFrameObj);
         passContext.CbPerObject.Update(context, ref cbObjectObj);
-        passContext.CbPerMaterial.Update(context, ref cbMaterialObj);
+        passContext.CbPerMaterialCore.Update(context, ref cbCore);
+        passContext.CbSceneEffects.Update(context, ref cbScene);
+        passContext.CbPostEffects.Update(context, ref cbPost);
 
         passContext.CbPerFrameArray[0] = passContext.CbPerFrame.Buffer;
         passContext.CbPerObjectArray[0] = passContext.CbPerObject.Buffer;
-        passContext.CbPerMaterialArray[0] = passContext.CbPerMaterial.Buffer;
+        passContext.CbPerMaterialArray[0] = passContext.CbPerMaterialCore.Buffer;
+        passContext.CbSceneEffectsArray[0] = passContext.CbSceneEffects.Buffer;
+        passContext.CbPostEffectsArray[0] = passContext.CbPostEffects.Buffer;
 
-        context.VSSetConstantBuffers(0, 1, passContext.CbPerFrameArray);
-        context.PSSetConstantBuffers(0, 1, passContext.CbPerFrameArray);
-        context.VSSetConstantBuffers(1, 1, passContext.CbPerObjectArray);
-        context.PSSetConstantBuffers(1, 1, passContext.CbPerObjectArray);
-        context.PSSetConstantBuffers(2, 1, passContext.CbPerMaterialArray);
+        context.VSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, passContext.CbPerFrameArray);
+        context.PSSetConstantBuffers(RenderingConstants.CbSlotPerFrame, 1, passContext.CbPerFrameArray);
+        context.VSSetConstantBuffers(RenderingConstants.CbSlotPerObject, 1, passContext.CbPerObjectArray);
+        context.PSSetConstantBuffers(RenderingConstants.CbSlotPerObject, 1, passContext.CbPerObjectArray);
+        context.PSSetConstantBuffers(RenderingConstants.CbSlotPerMaterial, 1, passContext.CbPerMaterialArray);
+        context.PSSetConstantBuffers(RenderingConstants.CbSlotSceneEffects, 1, passContext.CbSceneEffectsArray);
+        context.PSSetConstantBuffers(RenderingConstants.CbSlotPostEffects, 1, passContext.CbPostEffectsArray);
 
         context.DrawIndexed(part.IndexCount, part.IndexOffset, 0);
     }
