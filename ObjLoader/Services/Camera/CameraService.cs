@@ -8,25 +8,11 @@ namespace ObjLoader.Services.Camera
         {
             if (keyframes == null || keyframes.Count == 0) return (0, 0, 0, 0, 0, 0);
 
-            CameraKeyframe? prev = null;
-            CameraKeyframe? next = null;
-            double maxPrevTime = double.MinValue;
-            double minNextTime = double.MaxValue;
+            int prevIndex = FindPrevIndex(keyframes, time);
+            int nextIndex = prevIndex + 1;
 
-            for (int i = 0; i < keyframes.Count; i++)
-            {
-                var k = keyframes[i];
-                if (k.Time <= time && k.Time > maxPrevTime)
-                {
-                    prev = k;
-                    maxPrevTime = k.Time;
-                }
-                if (k.Time > time && k.Time < minNextTime)
-                {
-                    next = k;
-                    minNextTime = k.Time;
-                }
-            }
+            CameraKeyframe? prev = prevIndex >= 0 ? keyframes[prevIndex] : null;
+            CameraKeyframe? next = nextIndex < keyframes.Count ? keyframes[nextIndex] : null;
 
             if (prev == null && next != null) return (next.CamX, next.CamY, next.CamZ, next.TargetX, next.TargetY, next.TargetZ);
             if (prev != null && next == null) return (prev.CamX, prev.CamY, prev.CamZ, prev.TargetX, prev.TargetY, prev.TargetZ);
@@ -43,10 +29,34 @@ namespace ObjLoader.Services.Camera
                     Lerp(prev.TargetZ, next.TargetZ, easedT)
                 );
             }
+
             return (0, 0, 0, 0, 0, 0);
         }
 
-        private double Lerp(double a, double b, double t)
+        private static int FindPrevIndex(List<CameraKeyframe> keyframes, double time)
+        {
+            int lo = 0;
+            int hi = keyframes.Count - 1;
+            int result = -1;
+
+            while (lo <= hi)
+            {
+                int mid = lo + (hi - lo) / 2;
+                if (keyframes[mid].Time <= time)
+                {
+                    result = mid;
+                    lo = mid + 1;
+                }
+                else
+                {
+                    hi = mid - 1;
+                }
+            }
+
+            return result;
+        }
+
+        private static double Lerp(double a, double b, double t)
         {
             return a + (b - a) * t;
         }

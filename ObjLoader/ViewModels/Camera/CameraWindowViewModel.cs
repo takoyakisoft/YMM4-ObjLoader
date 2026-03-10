@@ -520,10 +520,13 @@ namespace ObjLoader.ViewModels.Camera
 
                 if (vmdData.CameraFrames.Count > 0)
                 {
-                    var newKeyframes = VmdMotionApplier.ConvertCameraFrames(vmdData);
+                    var newKeyframes = VmdMotionApplier.ConvertCameraFrames(vmdData)
+                        .OrderBy(k => k.Time)
+                        .ToList();
+
                     Keyframes.Clear();
                     foreach (var kf in newKeyframes) Keyframes.Add(kf);
-                    _parameter.Keyframes = new List<CameraKeyframe>(Keyframes);
+                    _parameter.Keyframes = [.. Keyframes];
 
                     double duration = VmdMotionApplier.GetDuration(vmdData);
                     if (duration > 0) MaxDuration = duration;
@@ -581,20 +584,34 @@ namespace ObjLoader.ViewModels.Camera
                 Easing = EasingManager.Presets.FirstOrDefault()?.Clone() ?? new EasingData()
             };
 
-            var existing = Keyframes.FirstOrDefault(k => Math.Abs(k.Time - CurrentTime) < 0.001);
-            if (existing != null)
+            int index = -1;
+            int lo = 0;
+            int hi = Keyframes.Count - 1;
+            while (lo <= hi)
             {
-                Keyframes.Remove(existing);
+                int mid = lo + (hi - lo) / 2;
+                double t = Keyframes[mid].Time;
+                if (Math.Abs(t - CurrentTime) < 0.001)
+                {
+                    index = mid;
+                    break;
+                }
+                if (t < CurrentTime) lo = mid + 1;
+                else hi = mid - 1;
             }
 
-            Keyframes.Add(keyframe);
-
-            var sorted = Keyframes.OrderBy(k => k.Time).ToList();
-            Keyframes.Clear();
-            foreach (var k in sorted) Keyframes.Add(k);
+            if (index >= 0)
+            {
+                Keyframes.RemoveAt(index);
+                Keyframes.Insert(index, keyframe);
+            }
+            else
+            {
+                Keyframes.Insert(lo, keyframe);
+            }
 
             SelectedKeyframe = keyframe;
-            _parameter.Keyframes = new List<CameraKeyframe>(Keyframes);
+            _parameter.Keyframes = [.. Keyframes];
         }
 
         private void RemoveKeyframe()
@@ -614,7 +631,7 @@ namespace ObjLoader.ViewModels.Camera
                     TargetZ = 0;
                 }
 
-                _parameter.Keyframes = new List<CameraKeyframe>(Keyframes);
+                _parameter.Keyframes = [.. Keyframes];
 
                 UpdateAnimation();
                 SyncToParameter();
@@ -704,13 +721,14 @@ namespace ObjLoader.ViewModels.Camera
                 {
                     if (serializer.Deserialize(stream) is CameraProjectData data)
                     {
-                        Keyframes.Clear();
-                        if (data.Keyframes != null)
-                        {
-                            foreach (var k in data.Keyframes) Keyframes.Add(k);
-                        }
+                        var sorted = (data.Keyframes ?? Enumerable.Empty<CameraKeyframe>())
+                            .OrderBy(k => k.Time)
+                            .ToList();
 
-                        _parameter.Keyframes = new List<CameraKeyframe>(Keyframes);
+                        Keyframes.Clear();
+                        foreach (var k in sorted) Keyframes.Add(k);
+
+                        _parameter.Keyframes = [.. Keyframes];
                         MaxDuration = data.Duration;
                         IsTargetFixed = data.IsTargetFixed;
 
