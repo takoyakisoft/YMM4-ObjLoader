@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using ObjLoader.Core.Mmd;
 using ObjLoader.Services.Mmd.Adapters;
 using ObjLoader.Services.Mmd.Physics.Interfaces;
@@ -37,5 +37,10 @@ public class MmdPhysics : IPhysicsEngine
     public bool IsPhysicsBone(int boneIndex)
     {
         return _genericPhysics.IsPhysicsBone(boneIndex);
+    }
+
+    public void Dispose()
+    {
+        _genericPhysics.Dispose();
     }
 }

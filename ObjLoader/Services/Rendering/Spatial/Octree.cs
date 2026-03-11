@@ -4,23 +4,29 @@ using System.Buffers;
 
 namespace ObjLoader.Services.Rendering.Spatial;
 
-internal class Octree : IDisposable
+internal class Octree
 {
     private OctreeNode _root;
-    private readonly CullingBox[] _itemBounds;
-    private readonly bool[] _disableCulling;
+    private CullingBox[] _itemBounds = Array.Empty<CullingBox>();
+    private bool[] _disableCulling = Array.Empty<bool>();
     private const int MaxItems = 16;
     private const int MaxDepth = 6;
     
     private readonly Stack<OctreeNode> _nodePool = new Stack<OctreeNode>(256);
 
-    public Octree(CullingBox rootBounds, CullingBox[] itemBounds, bool[] disableCulling)
+    public Octree()
     {
+        _root = GetNode(new CullingBox());
+    }
+
+    public void Build(CullingBox rootBounds, CullingBox[] itemBounds, bool[] disableCulling, int itemCount)
+    {
+        Clear();
         _root = GetNode(rootBounds);
         _itemBounds = itemBounds;
         _disableCulling = disableCulling;
 
-        for (int i = 0; i < itemBounds.Length; i++)
+        for (int i = 0; i < itemCount; i++)
         {
             Insert(i, _itemBounds[i], _root, 0);
         }
@@ -144,9 +150,9 @@ internal class Octree : IDisposable
                container.Max.X >= content.Max.X && container.Max.Y >= content.Max.Y && container.Max.Z >= content.Max.Z;
     }
 
-    public void GetVisibleItems(Frustum frustum, List<int> result)
+    public void GetVisibleItems(Frustum frustum, List<int> result, int itemCount)
     {
-        for (int i = 0; i < _itemBounds.Length; i++)
+        for (int i = 0; i < itemCount; i++)
         {
             if (_disableCulling[i])
             {
@@ -181,8 +187,10 @@ internal class Octree : IDisposable
         }
     }
 
-    public void Dispose()
+    public void Clear()
     {
         ReturnNode(_root);
+        _itemBounds = Array.Empty<CullingBox>();
+        _disableCulling = Array.Empty<bool>();
     }
 }

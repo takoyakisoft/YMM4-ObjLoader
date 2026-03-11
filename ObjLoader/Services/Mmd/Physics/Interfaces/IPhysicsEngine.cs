@@ -1,8 +1,8 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace ObjLoader.Services.Mmd.Physics.Interfaces
 {
-    public interface IPhysicsEngine
+    public interface IPhysicsEngine : IDisposable
     {
         void Reset(Matrix4x4[] globalBoneTransforms);
         void Update(Matrix4x4[] globalBoneTransforms, float deltaTime);

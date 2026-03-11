@@ -1,11 +1,11 @@
-﻿using System.Numerics;
+using System.Numerics;
 using ObjLoader.Settings;
 using System.Runtime.CompilerServices;
 using ObjLoader.Systems.Models;
 
 namespace ObjLoader.Systems.Physics;
 
-public class GenericPhysicsEngine
+public class GenericPhysicsEngine : IDisposable
 {
     private float Gravity => (float)PluginSettings.Instance.PhysicsGravity;
     private const float FixedTimeStep = 1f / 60f;
@@ -19,6 +19,14 @@ public class GenericPhysicsEngine
     private int MaxManifolds => PluginSettings.Instance.PhysicsMaxManifolds;
     private int ParallelNarrowPhaseThreshold => PluginSettings.Instance.PhysicsParallelNarrowPhaseThreshold;
     private float WarmStartScale => (float)PluginSettings.Instance.PhysicsWarmStartScale;
+
+    private readonly PhysicsThreadPool _threadPool;
+    private readonly Action<int> _solveIslandAction;
+    private readonly Action<int> _processNarrowPairAction;
+    private float _dispatchDt;
+    private float _dispatchContactErp;
+    private float _dispatchJointErp;
+    private bool _disposed;
 
     private readonly List<GenericBone> _bones;
     private readonly List<GenericRigidBody> _rigidBodies;
@@ -80,6 +88,10 @@ public class GenericPhysicsEngine
         _bones = bones ?? new List<GenericBone>();
         _rigidBodies = rigidBodies ?? new List<GenericRigidBody>();
         _joints = joints ?? new List<GenericJoint>();
+
+        _threadPool = new PhysicsThreadPool();
+        _solveIslandAction = SolveIslandDispatch;
+        _processNarrowPairAction = ProcessNarrowPairDispatch;
 
         _rbCount = _rigidBodies.Count;
         int rbCount = _rbCount;
@@ -421,10 +433,10 @@ public class GenericPhysicsEngine
 
         if (_activeIslandCount > 4)
         {
-            Parallel.For(0, _activeIslandCount, islandIdx =>
-            {
-                SolveIsland(islandIdx, dt, contactErp, jointErp);
-            });
+            _dispatchDt = dt;
+            _dispatchContactErp = contactErp;
+            _dispatchJointErp = jointErp;
+            _threadPool.Dispatch(_activeIslandCount, _solveIslandAction);
         }
         else
         {
@@ -741,15 +753,7 @@ public class GenericPhysicsEngine
 
         if (_narrowPairCount >= ParallelNarrowPhaseThreshold)
         {
-            int pairCount = _narrowPairCount;
-            Parallel.For(0, pairCount, pi =>
-            {
-                ref var pair = ref _narrowPairs[pi];
-                ref var manifold = ref _manifoldPool[pair.ManifoldIndex];
-                manifold.RefreshContactPoints(ref _states[pair.BodyA], ref _states[pair.BodyB]);
-                PhysicsCollision.DetectCollision(pair.BodyA, _rigidBodies[pair.BodyA], ref _states[pair.BodyA],
-                    pair.BodyB, _rigidBodies[pair.BodyB], ref _states[pair.BodyB], manifold);
-            });
+            _threadPool.Dispatch(_narrowPairCount, _processNarrowPairAction);
         }
         else
         {
@@ -1027,5 +1031,26 @@ public class GenericPhysicsEngine
         float len = q.Length();
         if (len < 1e-6f) return Quaternion.Identity;
         return Quaternion.Normalize(q);
+    }
+
+    private void SolveIslandDispatch(int islandIdx)
+    {
+        SolveIsland(islandIdx, _dispatchDt, _dispatchContactErp, _dispatchJointErp);
+    }
+
+    private void ProcessNarrowPairDispatch(int pi)
+    {
+        ref var pair = ref _narrowPairs[pi];
+        ref var manifold = ref _manifoldPool[pair.ManifoldIndex];
+        manifold.RefreshContactPoints(ref _states[pair.BodyA], ref _states[pair.BodyB]);
+        PhysicsCollision.DetectCollision(pair.BodyA, _rigidBodies[pair.BodyA], ref _states[pair.BodyA],
+            pair.BodyB, _rigidBodies[pair.BodyB], ref _states[pair.BodyB], manifold);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _threadPool.Dispose();
     }
 }

@@ -9,6 +9,7 @@ using ObjLoader.Rendering.Renderers;
 using Vortice.Direct3D11;
 using Vortice.Mathematics;
 using System.Numerics;
+using System.Buffers;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 using ObjLoader.Utilities.Logging;
 using ObjLoader.Services.Rendering.Device;
@@ -39,6 +40,8 @@ internal sealed class RenderService : IDisposable
     private ID3D11Buffer? _gridVertexBuffer;
     private readonly List<int> _tempVisibleIndices = new List<int>(MaxLayerArrayCapacity);
     private ApiObjectRenderer? _apiObjectRenderer;
+
+    private readonly Octree _octree = new Octree();
 
     private ConstantBuffer<CBPerFrame>? _cbPerFrame;
     private ConstantBuffer<CBPerObject>? _cbPerObject;
@@ -279,26 +282,34 @@ internal sealed class RenderService : IDisposable
 
         var (gridColor, axisColor) = PrepareRenderTargets(themeColor, isWireframe);
 
-        CullingBox[] itemBounds = new CullingBox[layers.Count];
-        bool[] disableCulling = new bool[layers.Count];
+        int layerCount = layers.Count;
+        CullingBox[] itemBounds = ArrayPool<CullingBox>.Shared.Rent(layerCount);
+        bool[] disableCulling = ArrayPool<bool>.Shared.Rent(layerCount);
         CullingBox rootBounds = new CullingBox();
 
-        for (int i = 0; i < layers.Count; i++)
+        try
         {
-            itemBounds[i] = layers[i].WorldBoundingBox;
-            disableCulling[i] = layers[i].IsAnimated;
-            rootBounds.Expand(itemBounds[i].Min);
-            rootBounds.Expand(itemBounds[i].Max);
-        }
+            for (int i = 0; i < layerCount; i++)
+            {
+                itemBounds[i] = layers[i].WorldBoundingBox;
+                disableCulling[i] = layers[i].IsAnimated;
+                rootBounds.Expand(itemBounds[i].Min);
+                rootBounds.Expand(itemBounds[i].Max);
+            }
 
-        _tempVisibleIndices.Clear();
-        var frustum = new Frustum(view * proj);
-        using (var octree = new Octree(rootBounds, itemBounds, disableCulling))
+            _tempVisibleIndices.Clear();
+            var frustum = new Frustum(view * proj);
+            _octree.Build(rootBounds, itemBounds, disableCulling, layerCount);
+            _octree.GetVisibleItems(frustum, _tempVisibleIndices, layerCount);
+            _octree.Clear();
+
+            ClassifyPartsByOpacity(layers, camPos, _tempVisibleIndices, frustum);
+        }
+        finally
         {
-            octree.GetVisibleItems(frustum, _tempVisibleIndices);
+            ArrayPool<CullingBox>.Shared.Return(itemBounds);
+            ArrayPool<bool>.Shared.Return(disableCulling);
         }
-
-        ClassifyPartsByOpacity(layers, camPos, _tempVisibleIndices, frustum);
 
         var passContext = _reusableContext;
         passContext.DeviceContext = context;

@@ -14,6 +14,7 @@ using ObjLoader.Rendering.Utilities;
 using ObjLoader.Settings;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Buffers;
 using ObjLoader.Rendering.Mathematics;
 using ObjLoader.Services.Rendering.Spatial;
 using Vortice.Direct3D;
@@ -45,6 +46,8 @@ namespace ObjLoader.Rendering.Renderers
         private ConstantBuffer<CBSceneEffects>? _cbSceneEffects;
         private ConstantBuffer<CBPostEffects>? _cbPostEffects;
         private ApiObjectRenderer? _apiObjectRenderer;
+
+        private readonly Octree _octree = new Octree();
 
         private readonly ID3D11Buffer[] _cbPerFrameArray = new ID3D11Buffer[1];
         private readonly ID3D11Buffer[] _cbPerObjectArray = new ID3D11Buffer[1];
@@ -160,8 +163,8 @@ namespace ObjLoader.Rendering.Renderers
 
             var mainViewProj = mainView * mainProj;
 
-            var layerWorldCenters = System.Buffers.ArrayPool<Vector3>.Shared.Rent(Math.Max(1, layers.Count));
-            var useLocalCenter = System.Buffers.ArrayPool<bool>.Shared.Rent(Math.Max(1, layers.Count));
+            var layerWorldCenters = ArrayPool<Vector3>.Shared.Rent(Math.Max(1, layers.Count));
+            var useLocalCenter = ArrayPool<bool>.Shared.Rent(Math.Max(1, layers.Count));
 
             try
             {
@@ -189,89 +192,99 @@ namespace ObjLoader.Rendering.Renderers
                     globalCenter = (minBounds + maxBounds) * 0.5f;
                 }
 
-                CullingBox[] itemBounds = new CullingBox[layers.Count];
-                bool[] disableCulling = new bool[layers.Count];
+                int layerCount = layers.Count;
+                CullingBox[] itemBounds = ArrayPool<CullingBox>.Shared.Rent(layerCount);
+                bool[] disableCulling = ArrayPool<bool>.Shared.Rent(layerCount);
                 CullingBox rootBounds = new CullingBox();
 
-                for (int i = 0; i < layers.Count; i++)
+                try
                 {
-                    var item = layers[i];
-                    var hierarchyMatrix = BuildHierarchyMatrix(item.State, layerStates);
-                    var normalize = Matrix4x4.CreateTranslation(-item.Resource.ModelCenter) * Matrix4x4.CreateScale(item.Resource.ModelScale);
-                    var world = normalize * hierarchyMatrix;
-                    
-                    bool isDynamic = item.OverrideVB != null;
-                    CullingBox transformedBox = CullingBox.Transform(item.Resource.LocalBoundingBox, world);
-                    
-                    itemBounds[i] = transformedBox;
-                    disableCulling[i] = isDynamic;
-
-                    rootBounds.Expand(itemBounds[i].Min);
-                    rootBounds.Expand(itemBounds[i].Max);
-                }
-
-                _tempMainVisibleIndices.Clear();
-                using var octree = new Octree(rootBounds, itemBounds, disableCulling);
-
-                var mainFrustum = new Frustum(mainViewProj);
-                octree.GetVisibleItems(mainFrustum, _tempMainVisibleIndices);
-
-                _mainVisibleSet.Clear();
-                for (int vi = 0; vi < _tempMainVisibleIndices.Count; vi++)
-                {
-                    _mainVisibleSet.Add(_tempMainVisibleIndices[vi]);
-                }
-
-                if ((layers.Count > 0 || _sceneDrawManager.GetExternalObjects().Count > 0) && _renderTargets.DepthStencilView != null)
-                {
-                    DepthPrePass(context, layers, layerStates, mainViewProj, width, height, _tempMainVisibleIndices);
-                    context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
-                    _renderTargets.CopyDepthBuffer(context);
-                    context.ClearDepthStencilView(_renderTargets.DepthStencilView, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1.0f, 0);
-                }
-
-                for (int i = 0; i < layers.Count; i++)
-                {
-                    if (!_mainVisibleSet.Contains(i)) continue;
-
-                    if (updateEnvironmentMap && _resources.EnvironmentRTVs != null && _resources.EnvironmentDSV != null)
+                    for (int i = 0; i < layerCount; i++)
                     {
-                        Vector3 captureCenter = useLocalCenter[i] ? layerWorldCenters[i] : globalCenter;
+                        var item = layers[i];
+                        var hierarchyMatrix = BuildHierarchyMatrix(item.State, layerStates);
+                        var normalize = Matrix4x4.CreateTranslation(-item.Resource.ModelCenter) * Matrix4x4.CreateScale(item.Resource.ModelScale);
+                        var world = normalize * hierarchyMatrix;
+                        
+                        bool isDynamic = item.OverrideVB != null;
+                        CullingBox transformedBox = CullingBox.Transform(item.Resource.LocalBoundingBox, world);
+                        
+                        itemBounds[i] = transformedBox;
+                        disableCulling[i] = isDynamic;
 
-                        context.PSSetShaderResources(RenderingConstants.SlotEnvironmentMap, 1, _nullSrv1);
-
-                        for (int face = 0; face < RenderingConstants.EnvironmentMapFaceCount; face++)
-                        {
-                            context.OMSetRenderTargets(_resources.EnvironmentRTVs[face], _resources.EnvironmentDSV);
-                            context.ClearRenderTargetView(_resources.EnvironmentRTVs[face], new Color4(0, 0, 0, 0));
-                            context.ClearDepthStencilView(_resources.EnvironmentDSV, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1.0f, 0);
-
-                            var view = Matrix4x4.CreateLookAt(captureCenter, captureCenter + _envFaceTargets[face], _envFaceUps[face]);
-                            view *= Matrix4x4.CreateScale(-1, 1, 1);
-                            var proj = Matrix4x4.CreatePerspectiveFieldOfView((float)(Math.PI / 2.0), 1.0f, RenderingConstants.DefaultNearPlane, RenderingConstants.DefaultFarPlane);
-                            var envViewProj = view * proj;
-                            var envFrustum = new Frustum(envViewProj);
-
-                            _tempEnvVisibleIndices.Clear();
-                            octree.GetVisibleItems(envFrustum, _tempEnvVisibleIndices);
-
-                            RenderScene(context, layers, layerStates, parameter, view, proj, captureCenter.X, captureCenter.Y, captureCenter.Z, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, RenderingConstants.EnvironmentMapSize, RenderingConstants.EnvironmentMapSize, false, _resources.CullNoneRasterizerState, _resources.DepthStencilState, dynamicTextureCache, i, null, _tempEnvVisibleIndices);
-
-                            var camPosEnv = new Vector4(captureCenter.X, captureCenter.Y, captureCenter.Z, 1.0f);
-                            _apiObjectRenderer?.RenderApiObjects(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
-                            _apiObjectRenderer?.RenderBillboards(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
-                        }
-
-                        context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
-                        context.GenerateMips(_resources.EnvironmentSRV);
+                        rootBounds.Expand(itemBounds[i].Min);
+                        rootBounds.Expand(itemBounds[i].Max);
                     }
 
-                    context.OMSetRenderTargets(_renderTargets.RenderTargetView, _renderTargets.DepthStencilView);
+                    _tempMainVisibleIndices.Clear();
+                    _octree.Build(rootBounds, itemBounds, disableCulling, layerCount);
+                    
+                    var mainFrustum = new Frustum(mainViewProj);
+                    _octree.GetVisibleItems(mainFrustum, _tempMainVisibleIndices, layerCount);
 
-                    _singleLayerBuffer.Clear();
-                    _singleLayerBuffer.Add(layers[i]);
-                    _singleVisibleIndices[0] = 0;
-                    RenderScene(context, _singleLayerBuffer, layerStates, parameter, mainView, mainProj, camX, camY, camZ, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, width, height, true, null, null, dynamicTextureCache, -1, _renderTargets.DepthCopySRV, _singleVisibleIndices);
+                    _mainVisibleSet.Clear();
+                    for (int vi = 0; vi < _tempMainVisibleIndices.Count; vi++)
+                    {
+                        _mainVisibleSet.Add(_tempMainVisibleIndices[vi]);
+                    }
+
+                    if ((layerCount > 0 || _sceneDrawManager.GetExternalObjects().Count > 0) && _renderTargets.DepthStencilView != null)
+                    {
+                        DepthPrePass(context, layers, layerStates, mainViewProj, width, height, _tempMainVisibleIndices);
+                        context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+                        _renderTargets.CopyDepthBuffer(context);
+                        context.ClearDepthStencilView(_renderTargets.DepthStencilView, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1.0f, 0);
+                    }
+
+                    for (int i = 0; i < layerCount; i++)
+                    {
+                        if (!_mainVisibleSet.Contains(i)) continue;
+
+                        if (updateEnvironmentMap && _resources.EnvironmentRTVs != null && _resources.EnvironmentDSV != null)
+                        {
+                            Vector3 captureCenter = useLocalCenter[i] ? layerWorldCenters[i] : globalCenter;
+
+                            context.PSSetShaderResources(RenderingConstants.SlotEnvironmentMap, 1, _nullSrv1);
+
+                            for (int face = 0; face < RenderingConstants.EnvironmentMapFaceCount; face++)
+                            {
+                                context.OMSetRenderTargets(_resources.EnvironmentRTVs[face], _resources.EnvironmentDSV);
+                                context.ClearRenderTargetView(_resources.EnvironmentRTVs[face], new Color4(0, 0, 0, 0));
+                                context.ClearDepthStencilView(_resources.EnvironmentDSV, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1.0f, 0);
+
+                                var view = Matrix4x4.CreateLookAt(captureCenter, captureCenter + _envFaceTargets[face], _envFaceUps[face]);
+                                view *= Matrix4x4.CreateScale(-1, 1, 1);
+                                var proj = Matrix4x4.CreatePerspectiveFieldOfView((float)(Math.PI / 2.0), 1.0f, RenderingConstants.DefaultNearPlane, RenderingConstants.DefaultFarPlane);
+                                var envViewProj = view * proj;
+                                var envFrustum = new Frustum(envViewProj);
+
+                                _tempEnvVisibleIndices.Clear();
+                                _octree.GetVisibleItems(envFrustum, _tempEnvVisibleIndices, layerCount);
+
+                                RenderScene(context, layers, layerStates, parameter, view, proj, captureCenter.X, captureCenter.Y, captureCenter.Z, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, RenderingConstants.EnvironmentMapSize, RenderingConstants.EnvironmentMapSize, false, _resources.CullNoneRasterizerState, _resources.DepthStencilState, dynamicTextureCache, i, null, _tempEnvVisibleIndices);
+
+                                var camPosEnv = new Vector4(captureCenter.X, captureCenter.Y, captureCenter.Z, 1.0f);
+                                _apiObjectRenderer?.RenderApiObjects(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
+                                _apiObjectRenderer?.RenderBillboards(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
+                            }
+
+                            context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+                            context.GenerateMips(_resources.EnvironmentSRV);
+                        }
+
+                        context.OMSetRenderTargets(_renderTargets.RenderTargetView, _renderTargets.DepthStencilView);
+
+                        _singleLayerBuffer.Clear();
+                        _singleLayerBuffer.Add(layers[i]);
+                        _singleVisibleIndices[0] = 0;
+                        RenderScene(context, _singleLayerBuffer, layerStates, parameter, mainView, mainProj, camX, camY, camZ, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, width, height, true, null, null, dynamicTextureCache, -1, _renderTargets.DepthCopySRV, _singleVisibleIndices);
+                    }
+                }
+                finally
+                {
+                    _octree.Clear();
+                    ArrayPool<CullingBox>.Shared.Return(itemBounds);
+                    ArrayPool<bool>.Shared.Return(disableCulling);
                 }
 
                 context.OMSetRenderTargets(_renderTargets.RenderTargetView, _renderTargets.DepthStencilView);
@@ -286,8 +299,8 @@ namespace ObjLoader.Rendering.Renderers
             }
             finally
             {
-                System.Buffers.ArrayPool<Vector3>.Shared.Return(layerWorldCenters);
-                System.Buffers.ArrayPool<bool>.Shared.Return(useLocalCenter);
+                ArrayPool<Vector3>.Shared.Return(layerWorldCenters);
+                ArrayPool<bool>.Shared.Return(useLocalCenter);
             }
         }
 

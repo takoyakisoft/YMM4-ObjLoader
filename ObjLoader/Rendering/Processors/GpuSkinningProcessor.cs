@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ObjLoader.Core.Mmd;
@@ -49,6 +49,7 @@ namespace ObjLoader.Rendering.Processors
         private int _lastVertexCount;
         private int _lastWeightCount;
         private int _lastWeightHash;
+        private int _lastVertexHash;
         private int _boneBufferCapacity;
         private bool _shaderCompiled;
         private bool _disposed;
@@ -89,8 +90,8 @@ namespace ObjLoader.Rendering.Processors
             int vertexStride = Unsafe.SizeOf<ObjVertex>();
             int weightStride = Unsafe.SizeOf<GpuBoneWeight>();
 
-            EnsureVertexBuffers(device, vertexCount, vertexStride);
-            EnsureWeightBuffer(device, vertexCount, weightStride);
+            bool vertexBufferRecreated = EnsureVertexBuffers(device, vertexCount, vertexStride);
+            bool weightBufferRecreated = EnsureWeightBuffer(device, vertexCount, weightStride);
             EnsureBoneBuffer(device, boneCount);
 
             var mapped = context.Map(_boneBuffer!, MapMode.WriteDiscard);
@@ -100,15 +101,20 @@ namespace ObjLoader.Rendering.Processors
             }
             context.Unmap(_boneBuffer!, 0);
 
-            mapped = context.Map(_inputVertexBuffer!, MapMode.WriteDiscard);
-            fixed (ObjVertex* pVerts = originalVertices)
+            int currentVertexHash = originalVertices.GetHashCode();
+            if (vertexBufferRecreated || _lastVertexHash != currentVertexHash)
             {
-                Buffer.MemoryCopy(pVerts, (void*)mapped.DataPointer, vertexCount * vertexStride, vertexCount * vertexStride);
+                mapped = context.Map(_inputVertexBuffer!, MapMode.WriteDiscard);
+                fixed (ObjVertex* pVerts = originalVertices)
+                {
+                    Buffer.MemoryCopy(pVerts, (void*)mapped.DataPointer, vertexCount * vertexStride, vertexCount * vertexStride);
+                }
+                context.Unmap(_inputVertexBuffer!, 0);
+                _lastVertexHash = currentVertexHash;
             }
-            context.Unmap(_inputVertexBuffer!, 0);
 
-            int currentHash = originalVertices.GetHashCode();
-            if (_lastWeightHash != currentHash || _lastWeightCount != vertexCount)
+            int currentWeightHash = weights.GetHashCode();
+            if (weightBufferRecreated || _lastWeightHash != currentWeightHash || _lastWeightCount != vertexCount)
             {
                 mapped = context.Map(_weightBuffer!, MapMode.WriteDiscard);
                 fixed (VertexBoneWeight* pSrc = weights)
@@ -128,7 +134,7 @@ namespace ObjLoader.Rendering.Processors
                 }
                 context.Unmap(_weightBuffer!, 0);
                 _lastWeightCount = vertexCount;
-                _lastWeightHash = currentHash;
+                _lastWeightHash = currentWeightHash;
             }
 
             mapped = context.Map(_constantBuffer!, MapMode.WriteDiscard);
@@ -177,9 +183,9 @@ namespace ObjLoader.Rendering.Processors
             });
         }
 
-        private void EnsureVertexBuffers(ID3D11Device device, int vertexCount, int vertexStride)
+        private bool EnsureVertexBuffers(ID3D11Device device, int vertexCount, int vertexStride)
         {
-            if (_inputVertexBuffer != null && _lastVertexCount == vertexCount) return;
+            if (_inputVertexBuffer != null && _lastVertexCount == vertexCount) return false;
 
             _inputVertexSrv?.Dispose();
             _inputVertexBuffer?.Dispose();
@@ -213,11 +219,12 @@ namespace ObjLoader.Rendering.Processors
                 vertexCount * vertexStride, BindFlags.VertexBuffer, ResourceUsage.Default, CpuAccessFlags.None));
 
             _lastVertexCount = vertexCount;
+            return true;
         }
 
-        private void EnsureWeightBuffer(ID3D11Device device, int vertexCount, int weightStride)
+        private bool EnsureWeightBuffer(ID3D11Device device, int vertexCount, int weightStride)
         {
-            if (_weightBuffer != null && _lastWeightCount == vertexCount) return;
+            if (_weightBuffer != null && _lastWeightCount == vertexCount) return false;
 
             _weightSrv?.Dispose();
             _weightBuffer?.Dispose();
@@ -232,6 +239,7 @@ namespace ObjLoader.Rendering.Processors
                 ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Buffer,
                 Buffer = new BufferShaderResourceView { FirstElement = 0, NumElements = vertexCount }
             });
+            return true;
         }
 
         public void Dispose()
