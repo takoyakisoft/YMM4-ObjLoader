@@ -18,6 +18,9 @@ internal sealed class ShadowRenderPass : IRenderPass
     private readonly int[] _strideArray = new int[1];
     private readonly int[] _offsetArray = new int[] { 0 };
 
+    private static readonly ID3D11RenderTargetView[] _emptyRtvs = [];
+    private static readonly Vortice.Mathematics.Color4 _clearBlend = new Vortice.Mathematics.Color4(0, 0, 0, 0);
+
     public void Render(in RenderPassContext context)
     {
         var settings = PluginSettings.Instance;
@@ -100,7 +103,7 @@ internal sealed class ShadowRenderPass : IRenderPass
 
         context.DeviceContext.PSSetShaderResources(RenderingConstants.SlotShadowMap, _nullSrv);
 
-        context.DeviceContext.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), context.Resources.ShadowMapDSVs[0]);
+        context.DeviceContext.OMSetRenderTargets(0, _emptyRtvs, context.Resources.ShadowMapDSVs[0]);
         context.DeviceContext.ClearDepthStencilView(context.Resources.ShadowMapDSVs[0], DepthStencilClearFlags.Depth, 1.0f, 0);
         context.DeviceContext.RSSetState(context.Resources.ShadowRasterizerState);
         context.DeviceContext.RSSetViewport(0, 0, settings.ShadowResolution, settings.ShadowResolution);
@@ -148,7 +151,7 @@ internal sealed class ShadowRenderPass : IRenderPass
         context.DeviceContext.OMSetRenderTargets(context.MainRtv, context.MainDsv);
         context.DeviceContext.RSSetState(context.IsWireframe ? context.Resources.WireframeRasterizerState : context.Resources.RasterizerState);
         context.DeviceContext.OMSetDepthStencilState(context.Resources.DepthStencilState, 0);
-        context.DeviceContext.OMSetBlendState(context.Resources.BlendState, new Vortice.Mathematics.Color4(0, 0, 0, 0), -1);
+        context.DeviceContext.OMSetBlendState(context.Resources.BlendState, _clearBlend, -1);
         context.DeviceContext.RSSetViewport(0, 0, context.ViewportWidth, context.ViewportHeight);
         context.DeviceContext.Flush();
     }

@@ -1,4 +1,4 @@
-﻿using ObjLoader.Services.Textures.Loaders;
+using ObjLoader.Services.Textures.Loaders;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Windows.Media;
@@ -270,9 +270,18 @@ namespace ObjLoader.Services.Textures
         {
             lock (_lock)
             {
-                return _loaders
-                    .OrderByDescending(l => l.Priority)
-                    .FirstOrDefault(l => l.CanLoad(path));
+                ITextureLoader? best = null;
+                int bestPriority = int.MinValue;
+                for (int i = 0; i < _loaders.Count; i++)
+                {
+                    var l = _loaders[i];
+                    if (l.CanLoad(path) && l.Priority > bestPriority)
+                    {
+                        best = l;
+                        bestPriority = l.Priority;
+                    }
+                }
+                return best;
             }
         }
 
@@ -311,6 +320,36 @@ namespace ObjLoader.Services.Textures
             {
                 raw.Dispose();
             }
+        }
+
+        public static void ScheduleEvictPaths(IEnumerable<string> paths, double delaySeconds)
+        {
+            if (paths == null) return;
+            var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in paths)
+            {
+                if (!string.IsNullOrEmpty(p))
+                {
+                    try { normalized.Add(System.IO.Path.GetFullPath(p).ToLowerInvariant()); }
+                    catch { }
+                }
+            }
+            if (normalized.Count == 0) return;
+
+            var delay = TimeSpan.FromSeconds(Math.Max(0.0, delaySeconds));
+            Timer? timer = null;
+            timer = new Timer(_ =>
+            {
+                timer?.Dispose();
+                var removed = s_gpuTextureCache.RemoveWhere(k => normalized.Contains(k.Path));
+                foreach (var (_, tex) in removed)
+                    SafeDisposeCom(tex);
+                foreach (var path in normalized)
+                {
+                    if (s_rawDataCache.TryRemove(path, out var raw))
+                        try { raw?.Dispose(); } catch { }
+                }
+            }, null, delay, Timeout.InfiniteTimeSpan);
         }
 
         public static void ClearAllCaches()

@@ -1,6 +1,7 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using ObjLoader.Infrastructure;
+using ObjLoader.Settings;
 using Vortice.Direct3D11;
 using ObjLoader.Utilities.Logging;
 
@@ -11,6 +12,7 @@ namespace ObjLoader.Cache.Gpu
         private static readonly Lazy<GpuResourceCache> _instance = new Lazy<GpuResourceCache>(() => new GpuResourceCache());
 
         private readonly ConcurrentDictionary<string, GpuResourceCacheItem> _cache = new();
+        private readonly ConcurrentDictionary<string, Timer> _ttlTimers = new();
         private readonly Lock _cleanupLock = new();
         private int _disposed;
 
@@ -66,6 +68,7 @@ namespace ObjLoader.Cache.Gpu
 
             if (_cache.TryGetValue(key, out var val) && val != null)
             {
+                CancelTtl(key);
                 item = val;
                 return true;
             }
@@ -84,6 +87,8 @@ namespace ObjLoader.Cache.Gpu
                 SafeDispose(item);
                 return;
             }
+
+            CancelTtl(key);
 
             GpuResourceCacheItem? itemToDispose = null;
 
@@ -106,6 +111,7 @@ namespace ObjLoader.Cache.Gpu
 
             if (IsDisposed && _cache.TryRemove(key, out var removed))
             {
+                CancelTtl(key);
                 ResourceTracker.Instance.Unregister(key);
                 SafeDispose(removed);
             }
@@ -116,6 +122,8 @@ namespace ObjLoader.Cache.Gpu
             if (IsDisposed) return;
             if (string.IsNullOrEmpty(key)) return;
 
+            CancelTtl(key);
+
             if (_cache.TryRemove(key, out var item))
             {
                 ResourceTracker.Instance.Unregister(key);
@@ -123,10 +131,53 @@ namespace ObjLoader.Cache.Gpu
             }
         }
 
+        public void ScheduleRelease(string key)
+        {
+            if (IsDisposed || string.IsNullOrEmpty(key)) return;
+            if (!_cache.ContainsKey(key)) return;
+
+            CancelTtl(key);
+
+            var delay = TimeSpan.FromSeconds(Math.Max(0.0, ModelSettings.Instance.D3DResourceReleaseDelay));
+
+            Timer? timer = null;
+            timer = new Timer(_ =>
+            {
+                lock (_cleanupLock)
+                {
+                    if (_ttlTimers.TryRemove(key, out Timer? removedTimer))
+                    {
+                        removedTimer?.Dispose();
+                    }
+
+                    if (!IsDisposed && _cache.TryRemove(key, out var item))
+                    {
+                        ResourceTracker.Instance.Unregister(key);
+                        SafeDispose(item);
+                    }
+                }
+            }, null, delay, Timeout.InfiniteTimeSpan);
+            _ttlTimers[key] = timer;
+        }
+
+        private void CancelTtl(string key)
+        {
+            if (_ttlTimers.TryRemove(key, out var existing))
+            {
+                existing.Dispose();
+            }
+        }
+
         public void Clear()
         {
             lock (_cleanupLock)
             {
+                foreach (var kvp in _ttlTimers)
+                {
+                    kvp.Value.Dispose();
+                }
+                _ttlTimers.Clear();
+
                 var snapshot = _cache.ToArray();
                 foreach (var kvp in snapshot)
                 {
@@ -150,6 +201,7 @@ namespace ObjLoader.Cache.Gpu
                 {
                     if (kvp.Value?.Device == device)
                     {
+                        CancelTtl(kvp.Key);
                         if (_cache.TryRemove(kvp.Key, out var item))
                         {
                             ResourceTracker.Instance.Unregister(kvp.Key);
@@ -191,10 +243,14 @@ namespace ObjLoader.Cache.Gpu
                         }
                     }
 
-                    if (shouldRemove && _cache.TryRemove(kvp.Key, out var removed))
+                    if (shouldRemove)
                     {
-                        ResourceTracker.Instance.Unregister(kvp.Key);
-                        SafeDispose(removed);
+                        CancelTtl(kvp.Key);
+                        if (_cache.TryRemove(kvp.Key, out var removed))
+                        {
+                            ResourceTracker.Instance.Unregister(kvp.Key);
+                            SafeDispose(removed);
+                        }
                     }
                 }
             }

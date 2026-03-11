@@ -1,4 +1,4 @@
-﻿using ObjLoader.Rendering.Core.States;
+using ObjLoader.Rendering.Core.States;
 
 namespace ObjLoader.Rendering.Models
 {
@@ -12,7 +12,7 @@ namespace ObjLoader.Rendering.Models
         public double TargetY { get; private set; }
         public double TargetZ { get; private set; }
         public int ActiveWorldId { get; private set; }
-        public Dictionary<string, LayerState> LayerStates { get; } = new Dictionary<string, LayerState>();
+        public Dictionary<string, LayerState> LayerStates { get; private set; } = new Dictionary<string, LayerState>();
 
         public void Update(long frame, double camX, double camY, double camZ, double targetX, double targetY, double targetZ, int activeWorldId, Dictionary<string, LayerState> layerStates)
         {
@@ -24,12 +24,7 @@ namespace ObjLoader.Rendering.Models
             TargetY = targetY;
             TargetZ = targetZ;
             ActiveWorldId = activeWorldId;
-
-            LayerStates.Clear();
-            foreach (var kvp in layerStates)
-            {
-                LayerStates[kvp.Key] = kvp.Value;
-            }
+            LayerStates = layerStates;
         }
     }
 }

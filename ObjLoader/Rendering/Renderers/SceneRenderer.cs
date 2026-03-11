@@ -71,6 +71,9 @@ namespace ObjLoader.Rendering.Renderers
 
         private readonly List<(LayerData Data, GpuResourceCacheItem Resource, LayerState State, ID3D11Buffer? OverrideVB)> _singleLayerBuffer = new(1);
 
+        private static readonly ID3D11RenderTargetView[] _emptyRtvs = [];
+        private static readonly Color4 _clearBlend = new Color4(0, 0, 0, 0);
+
         private static readonly Vector3[] _envFaceTargets =
         [
             new Vector3(1, 0, 0), new Vector3(-1, 0, 0),
@@ -124,7 +127,7 @@ namespace ObjLoader.Rendering.Renderers
             ClearAllResourceBindings(context);
 
             context.OMSetRenderTargets(_renderTargets.RenderTargetView, _renderTargets.DepthStencilView);
-            context.ClearRenderTargetView(_renderTargets.RenderTargetView, new Color4(0, 0, 0, 0));
+            context.ClearRenderTargetView(_renderTargets.RenderTargetView, _clearBlend);
             if (_renderTargets.DepthStencilView != null)
             {
                 context.ClearDepthStencilView(_renderTargets.DepthStencilView, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1.0f, 0);
@@ -170,68 +173,66 @@ namespace ObjLoader.Rendering.Renderers
             {
                 Vector3 globalCenter = Vector3.Zero;
 
-                if (layers.Count > 0)
-                {
-                    Vector3 minBounds = new Vector3(float.MaxValue);
-                    Vector3 maxBounds = new Vector3(-float.MaxValue);
-
-                    for (int i = 0; i < layers.Count; i++)
-                    {
-                        var item = layers[i];
-                        var hierarchyMatrix = BuildHierarchyMatrix(item.State, layerStates);
-                        var normalize = Matrix4x4.CreateTranslation(-item.Resource.ModelCenter) * Matrix4x4.CreateScale(item.Resource.ModelScale);
-                        var world = normalize * hierarchyMatrix;
-
-                        layerWorldCenters[i] = world.Translation;
-                        useLocalCenter[i] = !string.IsNullOrEmpty(item.State.ParentGuid);
-
-                        minBounds = Vector3.Min(minBounds, world.Translation);
-                        maxBounds = Vector3.Max(maxBounds, world.Translation);
-                    }
-
-                    globalCenter = (minBounds + maxBounds) * 0.5f;
-                }
-
                 int layerCount = layers.Count;
-                CullingBox[] itemBounds = ArrayPool<CullingBox>.Shared.Rent(layerCount);
-                bool[] disableCulling = ArrayPool<bool>.Shared.Rent(layerCount);
-                CullingBox rootBounds = new CullingBox();
+                CullingBox[] itemBounds = ArrayPool<CullingBox>.Shared.Rent(Math.Max(1, layerCount));
+                bool[] disableCulling = ArrayPool<bool>.Shared.Rent(Math.Max(1, layerCount));
+                Matrix4x4[] worldMatrices = ArrayPool<Matrix4x4>.Shared.Rent(Math.Max(1, layerCount));
 
                 try
                 {
-                    for (int i = 0; i < layerCount; i++)
+                    if (layerCount > 0)
                     {
-                        var item = layers[i];
-                        var hierarchyMatrix = BuildHierarchyMatrix(item.State, layerStates);
-                        var normalize = Matrix4x4.CreateTranslation(-item.Resource.ModelCenter) * Matrix4x4.CreateScale(item.Resource.ModelScale);
-                        var world = normalize * hierarchyMatrix;
-                        
-                        bool isDynamic = item.OverrideVB != null;
-                        CullingBox transformedBox = CullingBox.Transform(item.Resource.LocalBoundingBox, world);
-                        
-                        itemBounds[i] = transformedBox;
-                        disableCulling[i] = isDynamic;
+                        Vector3 minBounds = new Vector3(float.MaxValue);
+                        Vector3 maxBounds = new Vector3(-float.MaxValue);
+                        CullingBox rootBounds = new CullingBox();
 
-                        rootBounds.Expand(itemBounds[i].Min);
-                        rootBounds.Expand(itemBounds[i].Max);
+                        for (int i = 0; i < layerCount; i++)
+                        {
+                            var item = layers[i];
+                            var hierarchyMatrix = BuildHierarchyMatrix(item.State, layerStates);
+                            var normalize = Matrix4x4.CreateTranslation(-item.Resource.ModelCenter) * Matrix4x4.CreateScale(item.Resource.ModelScale);
+                            var world = normalize * hierarchyMatrix;
+
+                            worldMatrices[i] = world;
+                            layerWorldCenters[i] = world.Translation;
+                            useLocalCenter[i] = !string.IsNullOrEmpty(item.State.ParentGuid);
+
+                            minBounds = Vector3.Min(minBounds, world.Translation);
+                            maxBounds = Vector3.Max(maxBounds, world.Translation);
+
+                            bool isDynamic = item.OverrideVB != null;
+                            CullingBox transformedBox = CullingBox.Transform(item.Resource.LocalBoundingBox, world);
+                            itemBounds[i] = transformedBox;
+                            disableCulling[i] = isDynamic;
+
+                            rootBounds.Expand(transformedBox.Min);
+                            rootBounds.Expand(transformedBox.Max);
+                        }
+
+                        globalCenter = (minBounds + maxBounds) * 0.5f;
+
+                        _tempMainVisibleIndices.Clear();
+                        _octree.Build(rootBounds, itemBounds, disableCulling, layerCount);
+
+                        var mainFrustum = new Frustum(mainViewProj);
+                        _octree.GetVisibleItems(mainFrustum, _tempMainVisibleIndices, layerCount);
+
+                        _mainVisibleSet.Clear();
+                        for (int vi = 0; vi < _tempMainVisibleIndices.Count; vi++)
+                        {
+                            _mainVisibleSet.Add(_tempMainVisibleIndices[vi]);
+                        }
                     }
-
-                    _tempMainVisibleIndices.Clear();
-                    _octree.Build(rootBounds, itemBounds, disableCulling, layerCount);
-                    
-                    var mainFrustum = new Frustum(mainViewProj);
-                    _octree.GetVisibleItems(mainFrustum, _tempMainVisibleIndices, layerCount);
-
-                    _mainVisibleSet.Clear();
-                    for (int vi = 0; vi < _tempMainVisibleIndices.Count; vi++)
+                    else
                     {
-                        _mainVisibleSet.Add(_tempMainVisibleIndices[vi]);
+                        _tempMainVisibleIndices.Clear();
+                        _mainVisibleSet.Clear();
                     }
 
                     if ((layerCount > 0 || _sceneDrawManager.GetExternalObjects().Count > 0) && _renderTargets.DepthStencilView != null)
                     {
-                        DepthPrePass(context, layers, layerStates, mainViewProj, width, height, _tempMainVisibleIndices);
-                        context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+                        DepthPrePass(context, layers, worldMatrices, layerCount, mainViewProj, width, height, _tempMainVisibleIndices);
+                        context.OMSetRenderTargets(0, _emptyRtvs, null);
                         _renderTargets.CopyDepthBuffer(context);
                         context.ClearDepthStencilView(_renderTargets.DepthStencilView, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1.0f, 0);
                     }
@@ -249,7 +250,7 @@ namespace ObjLoader.Rendering.Renderers
                             for (int face = 0; face < RenderingConstants.EnvironmentMapFaceCount; face++)
                             {
                                 context.OMSetRenderTargets(_resources.EnvironmentRTVs[face], _resources.EnvironmentDSV);
-                                context.ClearRenderTargetView(_resources.EnvironmentRTVs[face], new Color4(0, 0, 0, 0));
+                                context.ClearRenderTargetView(_resources.EnvironmentRTVs[face], _clearBlend);
                                 context.ClearDepthStencilView(_resources.EnvironmentDSV, DepthStencilClearFlags.Depth | DepthStencilClearFlags.Stencil, 1.0f, 0);
 
                                 var view = Matrix4x4.CreateLookAt(captureCenter, captureCenter + _envFaceTargets[face], _envFaceUps[face]);
@@ -261,14 +262,14 @@ namespace ObjLoader.Rendering.Renderers
                                 _tempEnvVisibleIndices.Clear();
                                 _octree.GetVisibleItems(envFrustum, _tempEnvVisibleIndices, layerCount);
 
-                                RenderScene(context, layers, layerStates, parameter, view, proj, captureCenter.X, captureCenter.Y, captureCenter.Z, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, RenderingConstants.EnvironmentMapSize, RenderingConstants.EnvironmentMapSize, false, _resources.CullNoneRasterizerState, _resources.DepthStencilState, dynamicTextureCache, i, null, _tempEnvVisibleIndices);
+                                RenderScene(context, layers, layerStates, parameter, view, proj, captureCenter.X, captureCenter.Y, captureCenter.Z, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, RenderingConstants.EnvironmentMapSize, RenderingConstants.EnvironmentMapSize, false, _resources.CullNoneRasterizerState, _resources.DepthStencilState, dynamicTextureCache, i, null, _tempEnvVisibleIndices, worldMatrices);
 
                                 var camPosEnv = new Vector4(captureCenter.X, captureCenter.Y, captureCenter.Z, 1.0f);
                                 _apiObjectRenderer?.RenderApiObjects(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
                                 _apiObjectRenderer?.RenderBillboards(context, _sceneDrawManager, envViewProj, camPosEnv, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, false);
                             }
 
-                            context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+                            context.OMSetRenderTargets(0, _emptyRtvs, null);
                             context.GenerateMips(_resources.EnvironmentSRV);
                         }
 
@@ -277,7 +278,7 @@ namespace ObjLoader.Rendering.Renderers
                         _singleLayerBuffer.Clear();
                         _singleLayerBuffer.Add(layers[i]);
                         _singleVisibleIndices[0] = 0;
-                        RenderScene(context, _singleLayerBuffer, layerStates, parameter, mainView, mainProj, camX, camY, camZ, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, width, height, true, null, null, dynamicTextureCache, -1, _renderTargets.DepthCopySRV, _singleVisibleIndices);
+                        RenderScene(context, _singleLayerBuffer, layerStates, parameter, mainView, mainProj, camX, camY, camZ, lightViewProjs, cascadeSplits, shadowValid, activeWorldId, width, height, true, null, null, dynamicTextureCache, -1, _renderTargets.DepthCopySRV, _singleVisibleIndices, worldMatrices, i);
                     }
                 }
                 finally
@@ -285,6 +286,7 @@ namespace ObjLoader.Rendering.Renderers
                     _octree.Clear();
                     ArrayPool<CullingBox>.Shared.Return(itemBounds);
                     ArrayPool<bool>.Shared.Return(disableCulling);
+                    ArrayPool<Matrix4x4>.Shared.Return(worldMatrices);
                 }
 
                 context.OMSetRenderTargets(_renderTargets.RenderTargetView, _renderTargets.DepthStencilView);
@@ -306,7 +308,7 @@ namespace ObjLoader.Rendering.Renderers
 
         private void ClearAllResourceBindings(ID3D11DeviceContext context)
         {
-            context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
+            context.OMSetRenderTargets(0, _emptyRtvs, null);
             context.PSSetShaderResources(0, 4, _nullSrv4);
             context.VSSetShaderResources(0, 4, _nullSrv4);
             context.RSSetState(null);
@@ -332,7 +334,8 @@ namespace ObjLoader.Rendering.Renderers
         private void DepthPrePass(
             ID3D11DeviceContext context,
             List<(LayerData Data, GpuResourceCacheItem Resource, LayerState State, ID3D11Buffer? OverrideVB)> layers,
-            Dictionary<string, LayerState> layerStates,
+            Matrix4x4[] worldMatrices,
+            int layerCount,
             Matrix4x4 viewProj,
             int width,
             int height,
@@ -340,7 +343,7 @@ namespace ObjLoader.Rendering.Renderers
         {
             if (_cbPerObject == null) return;
 
-            context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), _renderTargets.DepthStencilView);
+            context.OMSetRenderTargets(0, _emptyRtvs, _renderTargets.DepthStencilView);
             context.RSSetState(_resources.RasterizerState);
             context.OMSetDepthStencilState(_resources.DepthStencilState);
             context.RSSetViewport(0, 0, width, height);
@@ -349,18 +352,14 @@ namespace ObjLoader.Rendering.Renderers
             context.VSSetShader(_resources.VertexShader);
             context.PSSetShader(null);
 
-            int count = visibleIndices?.Count ?? layers.Count;
+            int count = visibleIndices?.Count ?? layerCount;
             var mainFrustum = new Frustum(viewProj);
             for (int idx = 0; idx < count; idx++)
             {
                 int li = visibleIndices != null ? visibleIndices[idx] : idx;
                 var item = layers[li];
-                var state = item.State;
                 var resource = item.Resource;
-
-                var hierarchyMatrix = BuildHierarchyMatrix(state, layerStates);
-                var normalize = Matrix4x4.CreateTranslation(-resource.ModelCenter) * Matrix4x4.CreateScale(resource.ModelScale);
-                var world = normalize * hierarchyMatrix;
+                var world = worldMatrices[li];
                 var wvp = world * viewProj;
 
                 var cbObject = new CBPerObject
@@ -416,11 +415,13 @@ namespace ObjLoader.Rendering.Renderers
             IReadOnlyDictionary<string, ID3D11ShaderResourceView>? dynamicTextureCache = null,
             int skipIndex = -1,
             ID3D11ShaderResourceView? depthSrv = null,
-            List<int>? visibleIndices = null)
+            List<int>? visibleIndices = null,
+            Matrix4x4[]? precomputedWorlds = null,
+            int precomputedWorldsOffset = 0)
         {
             context.RSSetState(rasterizerState ?? _resources.RasterizerState);
             context.OMSetDepthStencilState(depthStencilState ?? _resources.DepthStencilState);
-            context.OMSetBlendState(_resources.BlendState, new Color4(0, 0, 0, 0), -1);
+            context.OMSetBlendState(_resources.BlendState, _clearBlend, -1);
             context.RSSetViewport(0, 0, width, height);
             context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
 
@@ -491,9 +492,18 @@ namespace ObjLoader.Rendering.Renderers
                     context.PSSetShaderResources(RenderingConstants.SlotEnvironmentMap, 1, _nullSrv1);
                 }
 
-                var hierarchyMatrix = BuildHierarchyMatrix(state, layerStates);
-                var normalize = Matrix4x4.CreateTranslation(-resource.ModelCenter) * Matrix4x4.CreateScale(resource.ModelScale);
-                var world = normalize * hierarchyMatrix;
+                Matrix4x4 world;
+                if (precomputedWorlds != null)
+                {
+                    world = precomputedWorlds[precomputedWorldsOffset + li];
+                }
+                else
+                {
+                    var hierarchyMatrix = BuildHierarchyMatrix(state, layerStates);
+                    var normalize = Matrix4x4.CreateTranslation(-resource.ModelCenter) * Matrix4x4.CreateScale(resource.ModelScale);
+                    world = normalize * hierarchyMatrix;
+                }
+
                 var wvp = world * viewProj;
 
                 var lightPos = new Vector4((float)state.LightX, (float)state.LightY, (float)state.LightZ, 1.0f);
@@ -570,14 +580,17 @@ namespace ObjLoader.Rendering.Renderers
                     var uiColorVec = hasTexture ? Vector4.One : new Vector4(state.BaseColor.ScR, state.BaseColor.ScG, state.BaseColor.ScB, state.BaseColor.ScA);
                     var partColor = resolvedBaseColor * uiColorVec;
 
-                    var (cbCore, cbScene, cbPost) = ConstantBufferFactory.CreatePerMaterial(
+                    ConstantBufferFactory.CreatePerMaterial(
                         wId,
                         partColor,
                         state.IsLightEnabled,
                         (float)state.Diffuse,
                         (float)state.Shininess,
                         roughness,
-                        metallic);
+                        metallic,
+                        out var cbCore,
+                        out var cbScene,
+                        out var cbPost);
 
                     _cbPerMaterialCore.Update(context, ref cbCore);
                     _cbSceneEffects.Update(context, ref cbScene);

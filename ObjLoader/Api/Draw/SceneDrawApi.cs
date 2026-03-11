@@ -8,6 +8,9 @@ namespace ObjLoader.Api.Draw
         private readonly ConcurrentDictionary<SceneObjectId, ExternalObjectHandle> _externalObjects = new();
         private readonly ConcurrentDictionary<SceneObjectId, BillboardDescriptor> _billboards = new();
 
+        private readonly List<ExternalObjectHandle> _visibleExternalObjectsBuf = new();
+        private readonly List<(SceneObjectId Id, BillboardDescriptor Desc)> _billboardsBuf = new();
+
         public SceneObjectId AddExternalObject(ExternalObjectDescriptor descriptor)
         {
             if (descriptor == null) throw new ArgumentNullException(nameof(descriptor));
@@ -75,22 +78,22 @@ namespace ObjLoader.Api.Draw
             return new List<SceneObjectId>(_billboards.Keys);
         }
 
-        internal IReadOnlyCollection<ExternalObjectHandle> GetVisibleExternalObjects()
+        internal IReadOnlyList<ExternalObjectHandle> GetVisibleExternalObjects()
         {
-            var result = new List<ExternalObjectHandle>();
+            _visibleExternalObjectsBuf.Clear();
             foreach (var h in _externalObjects.Values)
             {
-                if (h.IsVisible) result.Add(h);
+                if (h.IsVisible) _visibleExternalObjectsBuf.Add(h);
             }
-            return result;
+            return _visibleExternalObjectsBuf;
         }
 
-        internal IReadOnlyCollection<(SceneObjectId Id, BillboardDescriptor Desc)> GetBillboards()
+        internal IReadOnlyList<(SceneObjectId Id, BillboardDescriptor Desc)> GetBillboards()
         {
-            var result = new List<(SceneObjectId, BillboardDescriptor)>();
+            _billboardsBuf.Clear();
             foreach (var kv in _billboards)
-                result.Add((kv.Key, kv.Value));
-            return result;
+                _billboardsBuf.Add((kv.Key, kv.Value));
+            return _billboardsBuf;
         }
     }
 }

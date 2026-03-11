@@ -1,4 +1,5 @@
-﻿using ObjLoader.Plugin;
+using ObjLoader.Plugin;
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using Vortice.D3DCompiler;
@@ -221,9 +222,19 @@ namespace ObjLoader.Rendering.Shaders
 
         private static string ComputeHash(string input)
         {
-            var bytes = Encoding.UTF8.GetBytes(input);
-            var hash = SHA256.HashData(bytes);
-            return System.Convert.ToHexString(hash);
+            int maxByteCount = Encoding.UTF8.GetMaxByteCount(input.Length);
+            byte[] rented = ArrayPool<byte>.Shared.Rent(maxByteCount);
+            try
+            {
+                int written = Encoding.UTF8.GetBytes(input, 0, input.Length, rented, 0);
+                Span<byte> hash = stackalloc byte[32];
+                SHA256.HashData(rented.AsSpan(0, written), hash);
+                return System.Convert.ToHexString(hash);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
         }
 
         public void Dispose()

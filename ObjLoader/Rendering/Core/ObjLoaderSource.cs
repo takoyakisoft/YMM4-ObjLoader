@@ -70,6 +70,8 @@ public sealed class ObjLoaderSource : IShapeSource
 
     private static readonly ID3D11ShaderResourceView[] _emptySrvArray4 = new ID3D11ShaderResourceView[4];
     private static readonly ID3D11Buffer[] _emptyBufferArray1 = new ID3D11Buffer[1];
+    private static readonly ID3D11RenderTargetView[] _emptyRtvArray = [];
+    private static readonly Color4 _clearBlend = new Color4(0, 0, 0, 0);
 
     private double _currentTime;
 
@@ -438,8 +440,8 @@ public sealed class ObjLoaderSource : IShapeSource
         try
         {
             var context = _devices.D3D.Device.ImmediateContext;
-            context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
-            context.OMSetBlendState(null, new Color4(0, 0, 0, 0), -1);
+            context.OMSetRenderTargets(0, _emptyRtvArray, null);
+            context.OMSetBlendState(null, _clearBlend, -1);
             context.OMSetDepthStencilState(null, 0);
             context.PSSetShaderResources(0, 4, _emptySrvArray4);
             context.VSSetShaderResources(0, 4, _emptySrvArray4);
@@ -512,6 +514,30 @@ public sealed class ObjLoaderSource : IShapeSource
         {
             Services.Shared.SharedResourceRegistry.SetSharedDevices(null);
         }
+
+        foreach (var layer in _visibilityResolver.LayersToRender)
+        {
+            GpuResourceCache.Instance.ScheduleRelease(layer.State.CacheKey);
+        }
+
+        var delay = ModelSettings.Instance.D3DResourceReleaseDelay;
+        var texPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in _visibilityResolver.LayersToRender)
+        {
+            if (layer.Resource.Parts != null)
+            {
+                foreach (var part in layer.Resource.Parts)
+                {
+                    if (!string.IsNullOrEmpty(part.TexturePath))
+                        texPaths.Add(part.TexturePath);
+                }
+            }
+        }
+        if (texPaths.Count > 0)
+        {
+            TextureService.ScheduleEvictPaths(texPaths, delay);
+        }
+
         _sceneDrawManager.Dispose();
         _shaderManager.Dispose();
         _renderTargets.Dispose();

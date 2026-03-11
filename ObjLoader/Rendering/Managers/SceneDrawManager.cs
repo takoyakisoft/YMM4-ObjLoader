@@ -68,6 +68,8 @@ namespace ObjLoader.Rendering.Managers
         private bool _isDirty;
         private bool _isDisposed;
 
+        private static readonly Color4 _clearColor = new Color4(0, 0, 0, 0);
+
         public event EventHandler? Updated;
 
         public bool IsDirty => _isDirty;
@@ -125,7 +127,7 @@ namespace ObjLoader.Rendering.Managers
                     {
                         d2dContext.Target = cache.D2dTarget;
                         d2dContext.BeginDraw();
-                        d2dContext.Clear(new Color4(0, 0, 0, 0));
+                        d2dContext.Clear(_clearColor);
                         d2dContext.Transform = System.Numerics.Matrix3x2.CreateTranslation(-bounds.Left, -bounds.Top);
                         d2dContext.DrawImage(b.Desc.Image);
                         d2dContext.EndDraw();

@@ -64,6 +64,9 @@ internal sealed class RenderService : IDisposable
     private readonly List<TransparentPart> _transparentParts = new();
     private readonly HashSet<string> _usedPathsBuffer = new();
 
+    private static readonly ID3D11RenderTargetView[] _emptyRtvs = [];
+    private static readonly Color4 _clearBlend = new Color4(0, 0, 0, 0);
+
     private Matrix4x4[]? _cachedLayerWorlds;
     private Matrix4x4[]? _cachedLayerWvps;
     private int _cachedLayerCapacity;
@@ -454,7 +457,7 @@ internal sealed class RenderService : IDisposable
 
         context.RSSetState(isWireframe ? _d3dResources!.WireframeRasterizerState : _d3dResources!.RasterizerState);
         context.OMSetDepthStencilState(_d3dResources.DepthStencilState);
-        context.OMSetBlendState(_d3dResources.BlendState, new Color4(0, 0, 0, 0), -1);
+        context.OMSetBlendState(_d3dResources.BlendState, _clearBlend, -1);
         context.RSSetViewport(0, 0, _deviceManager.ViewportWidth, _deviceManager.ViewportHeight);
 
         return (gridColor, axisColor);
@@ -503,8 +506,8 @@ internal sealed class RenderService : IDisposable
         var context = _deviceManager.Context;
         if (context == null) return;
 
-        context.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), null);
-        context.OMSetBlendState(null, new Color4(0, 0, 0, 0), -1);
+        context.OMSetRenderTargets(0, _emptyRtvs, null);
+        context.OMSetBlendState(null, _clearBlend, -1);
         context.OMSetDepthStencilState(null, 0);
         context.RSSetState(null);
 

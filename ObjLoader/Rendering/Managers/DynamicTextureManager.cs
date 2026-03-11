@@ -7,24 +7,18 @@ namespace ObjLoader.Rendering.Managers
     public class DynamicTextureManager : IDynamicTextureManager
     {
         private readonly ITextureService _textureService;
-        private readonly Dictionary<string, ID3D11ShaderResourceView> _cache = new Dictionary<string, ID3D11ShaderResourceView>();
+        private readonly Dictionary<string, ID3D11ShaderResourceView> _cache = new();
+        private readonly HashSet<string> _keysToRemoveBuffer = new();
+        private readonly IReadOnlyDictionary<string, ID3D11ShaderResourceView> _readOnlyCache;
         private readonly object _lock = new object();
         private bool _disposed;
 
-        public IReadOnlyDictionary<string, ID3D11ShaderResourceView> Textures
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    return new Dictionary<string, ID3D11ShaderResourceView>(_cache);
-                }
-            }
-        }
+        public IReadOnlyDictionary<string, ID3D11ShaderResourceView> Textures => _readOnlyCache;
 
         public DynamicTextureManager(ITextureService textureService)
         {
             _textureService = textureService ?? throw new ArgumentNullException(nameof(textureService));
+            _readOnlyCache = _cache;
         }
 
         public void Prepare(IEnumerable<string> usedPaths, ID3D11Device device)
@@ -39,10 +33,18 @@ namespace ObjLoader.Rendering.Managers
                     return;
                 }
 
-                var currentPaths = new HashSet<string>(usedPaths);
-                var keysToRemove = _cache.Keys.Except(currentPaths).ToList();
+                _keysToRemoveBuffer.Clear();
+                foreach (var key in _cache.Keys)
+                {
+                    _keysToRemoveBuffer.Add(key);
+                }
 
-                foreach (var key in keysToRemove)
+                foreach (var path in usedPaths)
+                {
+                    _keysToRemoveBuffer.Remove(path);
+                }
+
+                foreach (var key in _keysToRemoveBuffer)
                 {
                     if (_cache.TryGetValue(key, out var srv))
                     {
@@ -51,7 +53,7 @@ namespace ObjLoader.Rendering.Managers
                     }
                 }
 
-                foreach (var path in currentPaths)
+                foreach (var path in usedPaths)
                 {
                     if (!_cache.ContainsKey(path))
                     {

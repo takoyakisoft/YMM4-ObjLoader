@@ -37,6 +37,7 @@ namespace ObjLoader.Rendering.Renderers
 
         private static readonly Matrix4x4[] _emptyLightViewProjs = new Matrix4x4[D3DResources.CascadeCount];
         private static readonly float[] _emptyCascadeSplits = new float[4];
+        private static readonly Color4 _clearBlend = new Color4(0, 0, 0, 0);
 
         private bool _isDisposed;
 
@@ -72,7 +73,7 @@ namespace ObjLoader.Rendering.Renderers
 
         private void BindMaterialBuffers(ID3D11DeviceContext context, int worldId, Vector4 baseColor, bool lightEnabled, float diffuse, float shininess, float roughness, float metallic)
         {
-            var (cbCore, cbScene, cbPost) = ConstantBufferFactory.CreatePerMaterial(worldId, baseColor, lightEnabled, diffuse, shininess, roughness, metallic);
+            ConstantBufferFactory.CreatePerMaterial(worldId, baseColor, lightEnabled, diffuse, shininess, roughness, metallic, out var cbCore, out var cbScene, out var cbPost);
             _cbPerMaterialCore.Update(context, ref cbCore);
             _cbSceneEffects.Update(context, ref cbScene);
             _cbPostEffects.Update(context, ref cbPost);
@@ -155,7 +156,7 @@ namespace ObjLoader.Rendering.Renderers
             if (billboards.Count == 0) return;
 
             context.OMSetDepthStencilState(_resources.DepthStencilState);
-            context.OMSetBlendState(_resources.BillboardBlendState, new Color4(0, 0, 0, 0), -1);
+            context.OMSetBlendState(_resources.BillboardBlendState, _clearBlend, -1);
 
             context.IASetInputLayout(_resources.InputLayout);
             context.VSSetShader(_resources.VertexShader);

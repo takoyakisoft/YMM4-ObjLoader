@@ -61,14 +61,17 @@ internal static class PartDrawHelper
             World = Matrix4x4.Transpose(world)
         };
 
-        var (cbCore, cbScene, cbPost) = ConstantBufferFactory.CreatePerMaterial(
+        ConstantBufferFactory.CreatePerMaterial(
             wId,
             material != null ? new Vector4(material.BaseColor.R / 255.0f, material.BaseColor.G / 255.0f, material.BaseColor.B / 255.0f, material.BaseColor.A / 255.0f) : part.BaseColor,
             layer.LightEnabled,
             (float)settings.GetDiffuseIntensity(wId),
             (float)settings.GetShininess(wId),
             roughness,
-            metallic);
+            metallic,
+            out var cbCore,
+            out var cbScene,
+            out var cbPost);
 
         passContext.CbPerFrame.Update(context, ref cbFrameObj);
         passContext.CbPerObject.Update(context, ref cbObjectObj);

@@ -15,7 +15,10 @@ internal sealed class LayerStateBuilder
     public Dictionary<string, LayerState> NewLayerStatesTemp { get; } = new(8);
     public bool HasBoneAnimation { get; private set; }
 
-    private static string GetCacheKey(string filePath) => $"{CacheKeyPrefix}{filePath}";
+    private string _cachedRawShaderPath = string.Empty;
+    private string _cachedTrimmedShaderPath = string.Empty;
+
+    private static string GetCacheKey(string filePath) => string.Concat(CacheKeyPrefix, filePath);
 
     public (int ActiveWorldId, bool LayersChanged) Build(
         ObjLoaderParameter parameter,
@@ -91,7 +94,7 @@ internal sealed class LayerStateBuilder
                 LightType = layer.LightType,
                 FilePath = filePath,
                 CacheKey = cacheKey,
-                ShaderFilePath = parameter.ShaderFilePath?.Trim('"') ?? string.Empty,
+                ShaderFilePath = GetTrimmedShaderPath(parameter.ShaderFilePath),
                 BaseColor = layer.BaseColor,
                 WorldId = worldId,
                 Projection = layer.Projection,
@@ -159,6 +162,16 @@ internal sealed class LayerStateBuilder
         }
 
         return (activeWorldId, layersChanged);
+    }
+
+    private string GetTrimmedShaderPath(string? raw)
+    {
+        if (raw == null) return string.Empty;
+        if (string.Equals(raw, _cachedRawShaderPath, StringComparison.Ordinal))
+            return _cachedTrimmedShaderPath;
+        _cachedRawShaderPath = raw;
+        _cachedTrimmedShaderPath = raw.Trim('"');
+        return _cachedTrimmedShaderPath;
     }
 
     private Dictionary<int, PartMaterialState>? CreatePartMaterials(LayerData layer, Dictionary<int, PartMaterialState>? oldPartMaterials)

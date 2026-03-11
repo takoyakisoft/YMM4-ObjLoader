@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Windows.Media;
 using ObjLoader.Settings;
 
@@ -9,18 +9,21 @@ namespace ObjLoader.Rendering.Core.Buffers
         private static Vector4 ToVec4(Color c) =>
             new(c.R / 255.0f, c.G / 255.0f, c.B / 255.0f, c.A / 255.0f);
 
-        public static (CBPerMaterial Core, CBSceneEffects Scene, CBPostEffects Post) CreatePerMaterial(
+        public static void CreatePerMaterial(
             int worldId,
             Vector4 baseColor,
             bool lightEnabled,
             float diffuseIntensity,
             float shininess,
             float roughness,
-            float metallic)
+            float metallic,
+            out CBPerMaterial core,
+            out CBSceneEffects scene,
+            out CBPostEffects post)
         {
             var s = PluginSettings.Instance;
 
-            var core = new CBPerMaterial
+            core = new CBPerMaterial
             {
                 BaseColor = baseColor,
                 LightEnabled = lightEnabled ? 1.0f : 0.0f,
@@ -31,7 +34,7 @@ namespace ObjLoader.Rendering.Core.Buffers
                 PbrParams = new Vector4(metallic, roughness, 1.0f, 0)
             };
 
-            var scene = new CBSceneEffects
+            scene = new CBSceneEffects
             {
                 RimParams = new Vector4(s.GetRimEnabled(worldId) ? 1 : 0, (float)s.GetRimIntensity(worldId), (float)s.GetRimPower(worldId), 0),
                 RimColor = ToVec4(s.GetRimColor(worldId)),
@@ -44,7 +47,7 @@ namespace ObjLoader.Rendering.Core.Buffers
                 SsrParams2 = new Vector4((float)s.GetSSRMaxSteps(worldId), (float)s.GetSSRThickness(worldId), 0, 0)
             };
 
-            var post = new CBPostEffects
+            post = new CBPostEffects
             {
                 ColorCorrParams = new Vector4((float)s.GetSaturation(worldId), (float)s.GetContrast(worldId), (float)s.GetGamma(worldId), (float)s.GetBrightnessPost(worldId)),
                 VignetteParams = new Vector4(s.GetVignetteEnabled(worldId) ? 1 : 0, (float)s.GetVignetteIntensity(worldId), (float)s.GetVignetteRadius(worldId), (float)s.GetVignetteSoftness(worldId)),
@@ -55,8 +58,6 @@ namespace ObjLoader.Rendering.Core.Buffers
                 MonoColor = ToVec4(s.GetMonochromeColor(worldId)),
                 PosterizeParams = new Vector4(s.GetPosterizeEnabled(worldId) ? 1 : 0, s.GetPosterizeLevels(worldId), 0, 0)
             };
-
-            return (core, scene, post);
         }
 
         public static CBPerFrame CreatePerFrameForScene(
