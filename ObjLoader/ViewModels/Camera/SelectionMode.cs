@@ -1,4 +1,4 @@
-﻿namespace ObjLoader.ViewModels.Camera
+namespace ObjLoader.ViewModels.Camera
 {
     public enum SelectionMode
     {
