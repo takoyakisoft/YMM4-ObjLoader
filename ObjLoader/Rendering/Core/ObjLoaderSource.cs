@@ -8,6 +8,7 @@ using ObjLoader.Rendering.Core.Resources;
 using ObjLoader.Rendering.Core.States;
 using ObjLoader.Rendering.Managers;
 using ObjLoader.Rendering.Managers.Interfaces;
+using ObjLoader.Rendering.Models;
 using ObjLoader.Rendering.Renderers;
 using ObjLoader.Rendering.Shaders;
 using ObjLoader.Services.Textures;
@@ -22,9 +23,11 @@ using D2D = Vortice.Direct2D1;
 
 namespace ObjLoader.Rendering.Core;
 
-public sealed class ObjLoaderSource : IShapeSource
+public sealed class ObjLoaderSource : IShapeSource2
 {
     public static readonly object SharedRenderLock = new();
+
+    public IEnumerable<VideoController> Controllers { get; private set; } = [];
 
     private readonly IGraphicsDevicesAndContext _devices;
     private readonly ObjLoaderParameter _parameter;
@@ -314,6 +317,13 @@ public sealed class ObjLoaderSource : IShapeSource
         FinalizeCommandList(camX, camY, camZ, targetX, targetY, targetZ,
             settingsVersion, activeWorldId, settings);
         _sceneDrawManager.ClearDirtyFlag();
+
+        UpdateControllers(stateToRender, sw, sh);
+    }
+
+    private void UpdateControllers(FrameState stateToRender, int sw, int sh)
+    {
+        Controllers = ObjLoaderController.CreateControllers(_parameter, stateToRender, _layerStates, sw, sh);
     }
 
     private (double camX, double camY, double camZ, double targetX, double targetY, double targetZ) CalculateCameraTransforms(long frame, long length, int fps)
