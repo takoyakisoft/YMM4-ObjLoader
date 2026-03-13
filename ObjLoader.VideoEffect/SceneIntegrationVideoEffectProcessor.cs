@@ -14,11 +14,20 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
     private ID2D1Image? input;
     private SceneObjectId? objectId;
     private readonly BillboardDescriptor lastDescriptor = new();
-    private readonly object syncLock = new object();
+    private readonly Lock syncLock = new();
     private ISceneServices? _cachedServices;
     private nint _cachedDevicePointer;
 
-    public ID2D1Image Output => input ?? throw new NullReferenceException(nameof(input) + " is null");
+    public ID2D1Image Output
+    {
+        get
+        {
+            lock (syncLock)
+            {
+                return input ?? throw new NullReferenceException(nameof(input) + " is null");
+            }
+        }
+    }
 
     public SceneIntegrationVideoEffectProcessor(SceneIntegrationVideoEffect item, IGraphicsDevicesAndContext devices)
     {
@@ -69,6 +78,7 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
             var baseSize = GetImageSize(input);
             var size = new Vector2(-(baseSize.X * 0.01f * scale * scaleX), baseSize.Y * 0.01f * scale * scaleY);
 
+            var services = GetSceneServices();
             lock (syncLock)
             {
                 lastDescriptor.Image = input;
@@ -78,7 +88,6 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
                 lastDescriptor.FaceCamera = item.FaceCamera;
                 lastDescriptor.Opacity = opacity;
 
-                var services = GetSceneServices();
                 if (services?.Draw != null)
                 {
                     RegisterOrUpdateBillboard(services);
@@ -87,10 +96,7 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         }
         else
         {
-            lock (syncLock)
-            {
-                RemoveBillboard();
-            }
+            RemoveBillboard();
         }
 
         return effectDescription.DrawDescription with { Opacity = 0 };
@@ -131,18 +137,21 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
 
     private void RemoveBillboard()
     {
-        if (!objectId.HasValue) return;
+        var services = GetSceneServices();
+        lock (syncLock)
+        {
+            if (!objectId.HasValue) return;
 
-        try
-        {
-            var services = GetSceneServices();
-            services?.Draw?.RemoveBillboard(objectId.Value);
-            objectId = null;
-            services?.TriggerUpdate();
-        }
-        catch
-        {
-            objectId = null;
+            try
+            {
+                services?.Draw?.RemoveBillboard(objectId.Value);
+                objectId = null;
+                services?.TriggerUpdate();
+            }
+            catch
+            {
+                objectId = null;
+            }
         }
     }
 
@@ -178,22 +187,22 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
 
     public void ClearInput()
     {
-        input = null;
         lock (syncLock)
         {
-            RemoveBillboard();
+            input = null;
         }
+        RemoveBillboard();
     }
 
     public void SetInput(ID2D1Image? input)
     {
-        this.input = input;
-        if (input != null)
+        var services = GetSceneServices();
+        lock (syncLock)
         {
-            lock (syncLock)
+            this.input = input;
+            if (this.input != null)
             {
-                lastDescriptor.Image = input;
-                var services = GetSceneServices();
+                lastDescriptor.Image = this.input;
                 if (services?.Draw != null)
                 {
                     RegisterOrUpdateBillboard(services);
@@ -216,21 +225,27 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         item.RotationZ.PropertyChanged -= OnPropertyChanged;
         item.Opacity.PropertyChanged -= OnPropertyChanged;
         item.PropertyChanged -= OnPropertyChanged;
+        RemoveBillboard();
         lock (syncLock)
         {
-            RemoveBillboard();
+            _cachedServices = null;
         }
-        _cachedServices = null;
     }
 
     private void OnSceneRegistrationChanged(object? sender, SceneRegistrationChangedEventArgs e)
     {
         if (e.IsRegistered)
         {
+            ISceneServices? services = null;
+            if (ObjLoaderApi.TryGetScene(e.InstanceId, out var s) && s != null && !s.IsDisposed)
+            {
+                services = s;
+            }
+
             lock (syncLock)
             {
                 _cachedServices = null;
-                if (lastDescriptor.Image != null && ObjLoaderApi.TryGetScene(e.InstanceId, out var services) && services != null && !services.IsDisposed)
+                if (lastDescriptor.Image != null && services != null)
                 {
                     if (_cachedDevicePointer != IntPtr.Zero && services.ContextPointer == _cachedDevicePointer)
                     {
