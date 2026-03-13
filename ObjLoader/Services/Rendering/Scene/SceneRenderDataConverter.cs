@@ -1,5 +1,4 @@
 using System.IO;
-using System.Windows.Media;
 using ObjLoader.Core.Models;
 using ObjLoader.Core.Timeline;
 using ObjLoader.Plugin;

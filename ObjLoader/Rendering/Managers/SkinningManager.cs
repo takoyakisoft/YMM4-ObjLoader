@@ -25,6 +25,10 @@ namespace ObjLoader.Rendering.Managers
         {
             if (_skinningStates.TryGetValue(guid, out var existing))
             {
+                if (string.Equals(existing.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
                 DisposeSkinningStateResources(existing);
             }
 
@@ -47,7 +51,10 @@ namespace ObjLoader.Rendering.Managers
 
         public void CleanupStaleStates(HashSet<string> activeGuids)
         {
-            if (_skinningStates.Count == 0) return;
+            if (_skinningStates.Count == 0)
+            {
+                return;
+            }
 
             _staleGuidsBuffer.Clear();
             foreach (var key in _skinningStates.Keys)

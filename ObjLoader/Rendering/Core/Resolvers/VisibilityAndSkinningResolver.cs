@@ -58,7 +58,7 @@ internal sealed class VisibilityAndSkinningResolver(
                 continue;
             }
 
-            TryRebuildSkinning(item, layerState, ref loadedModel);
+            EnsureSkinningReady(item, layerState, ref loadedModel);
 
             double motionTime = Math.Max(0, currentTime - item.Data.VmdTimeOffset);
             ID3D11Buffer? overrideVB = null;
@@ -127,7 +127,7 @@ internal sealed class VisibilityAndSkinningResolver(
             : null;
     }
 
-    private void TryRebuildSkinning(
+    private void EnsureSkinningReady(
         (string Guid, LayerState State, LayerData Data) item,
         LayerState layerState,
         ref ObjModel? loadedModel)
@@ -137,13 +137,20 @@ internal sealed class VisibilityAndSkinningResolver(
             return;
         }
 
+        if (!layerState.FilePath.EndsWith(".pmx", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         bool needsRebuild = DetermineSkinningRebuildNeeded(item.Data, layerState.FilePath);
 
-        if (needsRebuild
-            && item.Data.VmdMotionData != null
-            && layerState.FilePath.EndsWith(".pmx", StringComparison.OrdinalIgnoreCase))
+        if (needsRebuild && item.Data.VmdMotionData != null)
         {
-            BuildSkinningState(item, layerState, ref loadedModel);
+            RebuildSkinningState(item, layerState, ref loadedModel);
+        }
+        else if (item.Data.BoneAnimatorInstance != null)
+        {
+            EnsureSkinningRegistered(item.Guid, layerState, ref loadedModel);
         }
     }
 
@@ -176,7 +183,7 @@ internal sealed class VisibilityAndSkinningResolver(
         return false;
     }
 
-    private void BuildSkinningState(
+    private void RebuildSkinningState(
         (string Guid, LayerState State, LayerData Data) item,
         LayerState layerState,
         ref ObjModel? loadedModel)
@@ -203,6 +210,29 @@ internal sealed class VisibilityAndSkinningResolver(
                     loadedModel.Joints);
                 item.Data.AppliedModelFilePath = layerState.FilePath;
             }
+        }
+        catch
+        {
+        }
+    }
+
+    private void EnsureSkinningRegistered(
+        string guid,
+        LayerState layerState,
+        ref ObjModel? loadedModel)
+    {
+        try
+        {
+            loadedModel ??= loader.Load(layerState.FilePath);
+            loadedModel.ExtensionLoadTask?.Wait();
+
+            if (loadedModel.BoneWeights == null)
+            {
+                return;
+            }
+
+            skinningManager.RegisterSkinningState(
+                guid, layerState.FilePath, loadedModel.Vertices, loadedModel.BoneWeights);
         }
         catch
         {
