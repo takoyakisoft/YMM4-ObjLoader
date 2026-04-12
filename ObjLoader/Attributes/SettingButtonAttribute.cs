@@ -1,4 +1,4 @@
-﻿using ObjLoader.Plugin;
+using ObjLoader.Plugin;
 using ObjLoader.ViewModels.Settings;
 using ObjLoader.Views.Controls;
 using System.Windows;
@@ -29,6 +29,10 @@ namespace ObjLoader.Attributes
         {
             if (control is SettingButton button)
             {
+                if (button.DataContext is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
                 button.DataContext = null;
             }
         }

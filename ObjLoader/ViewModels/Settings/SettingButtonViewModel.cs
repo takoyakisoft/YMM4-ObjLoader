@@ -1,4 +1,4 @@
-﻿using ObjLoader.Core.Timeline;
+using ObjLoader.Core.Timeline;
 using ObjLoader.Plugin;
 using ObjLoader.Plugin.Utilities;
 using ObjLoader.Settings;
@@ -13,12 +13,13 @@ using YukkuriMovieMaker.Commons;
 
 namespace ObjLoader.ViewModels.Settings
 {
-    internal class SettingButtonViewModel : Bindable
+    internal class SettingButtonViewModel : Bindable, IDisposable
     {
         private readonly ObjLoaderParameter _parameter;
-        private LayerWindow? _layerWindow;
-        private SplitWindow? _splitWindow;
-        private CenterPointWindow? _centerPointWindow;
+        private Window? _layerWindow;
+        private Window? _splitWindow;
+        private Window? _centerPointWindow;
+        private bool _isDisposed;
 
         public ActionCommand OpenSettingWindowCommand { get; }
         public ActionCommand OpenLayerWindowCommand { get; }
@@ -118,7 +119,7 @@ namespace ObjLoader.ViewModels.Settings
                 DataContext = new LayerWindowViewModel(_parameter),
                 Owner = Application.Current.MainWindow
             };
-            _layerWindow.Closed += (s, e) => _layerWindow = null;
+            _layerWindow.Closed += OnLayerWindowClosed;
             _layerWindow.Show();
         }
 
@@ -139,7 +140,7 @@ namespace ObjLoader.ViewModels.Settings
                 DataContext = new SplitWindowViewModel(_parameter),
                 Owner = Application.Current.MainWindow
             };
-            _splitWindow.Closed += (s, e) => _splitWindow = null;
+            _splitWindow.Closed += OnSplitWindowClosed;
             _splitWindow.Show();
         }
 
@@ -160,8 +161,65 @@ namespace ObjLoader.ViewModels.Settings
                 DataContext = new CenterPointWindowViewModel(_parameter),
                 Owner = Application.Current.MainWindow
             };
-            _centerPointWindow.Closed += (s, e) => _centerPointWindow = null;
+            _centerPointWindow.Closed += OnCenterPointWindowClosed;
             _centerPointWindow.Show();
+        }
+
+        private void OnLayerWindowClosed(object? sender, EventArgs e)
+        {
+            if (sender is not Window win) return;
+            win.Closed -= OnLayerWindowClosed;
+            if (win.DataContext is IDisposable vm) vm.Dispose();
+            _layerWindow = null;
+        }
+
+        private void OnSplitWindowClosed(object? sender, EventArgs e)
+        {
+            if (sender is not Window win) return;
+            win.Closed -= OnSplitWindowClosed;
+            if (win.DataContext is IDisposable vm) vm.Dispose();
+            _splitWindow = null;
+        }
+
+        private void OnCenterPointWindowClosed(object? sender, EventArgs e)
+        {
+            if (sender is not Window win) return;
+            win.Closed -= OnCenterPointWindowClosed;
+            if (win.DataContext is IDisposable vm) vm.Dispose();
+            _centerPointWindow = null;
+        }
+
+        private void CloseAndDisposeWindow(ref Window? field)
+        {
+            var win = field;
+            field = null;
+            win?.Close();
+        }
+
+        public void Dispose()
+        {
+            if (_isDisposed) return;
+            _isDisposed = true;
+
+            PropertyChangedEventManager.RemoveHandler(_parameter, OnParameterPropertyChanged, string.Empty);
+            CollectionChangedEventManager.RemoveHandler(_parameter.Layers, OnLayersCollectionChanged);
+
+            void CloseAll()
+            {
+                CloseAndDisposeWindow(ref _layerWindow);
+                CloseAndDisposeWindow(ref _splitWindow);
+                CloseAndDisposeWindow(ref _centerPointWindow);
+            }
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher is null || dispatcher.CheckAccess())
+            {
+                CloseAll();
+            }
+            else
+            {
+                dispatcher.Invoke(CloseAll);
+            }
         }
     }
 }

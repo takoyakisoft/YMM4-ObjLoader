@@ -1,4 +1,4 @@
-﻿using ObjLoader.ViewModels.Camera;
+using ObjLoader.ViewModels.Camera;
 using ObjLoader.Views.Controls;
 using System.Windows;
 using YukkuriMovieMaker.Commons;
@@ -24,6 +24,10 @@ namespace ObjLoader.Attributes
         {
             if (control is CameraWindowButton button)
             {
+                if (button.DataContext is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
                 button.DataContext = null;
             }
         }
