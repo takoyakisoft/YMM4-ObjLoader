@@ -86,7 +86,7 @@ namespace ObjLoader.Plugin
 
         [Display(GroupName = nameof(Texts.Group_Model), Name = nameof(Texts.Projection), Description = nameof(Texts.Projection_Desc), ResourceType = typeof(Texts))]
         [EnumComboBox]
-        public ProjectionType Projection { get; set => Set(ref field, value); } = ProjectionType.Parallel;
+        public ProjectionType Projection { get; set => Set(ref field, value); } = ProjectionType.Perspective;
 
         [Display(GroupName = nameof(Texts.Group_Display), Name = nameof(Texts.ScreenWidth), Description = nameof(Texts.ScreenWidth_Desc), ResourceType = typeof(Texts))]
         [AnimationSlider("F0", "px", 1, 4096)]
@@ -239,7 +239,7 @@ namespace ObjLoader.Plugin
             if (sharedData == null)
             {
                 BaseColor = Colors.White;
-                Projection = ProjectionType.Parallel;
+                Projection = ProjectionType.Perspective;
                 IsLightEnabled = false;
 
                 _layerManager.Initialize(this);
