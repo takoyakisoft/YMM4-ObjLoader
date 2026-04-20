@@ -95,11 +95,12 @@ namespace ObjLoader.Rendering.Managers
             foreach (var b in currentBillboards)
             {
                 _currentIds.Add(b.Id);
-                if (b.Desc.Image == null) continue;
+                var billboardImage = b.Desc?.Image;
+                if (billboardImage == null || billboardImage.NativePointer == IntPtr.Zero) continue;
 
                 try
                 {
-                    var bounds = _devices.DeviceContext.GetImageLocalBounds(b.Desc.Image);
+                    var bounds = _devices.DeviceContext.GetImageLocalBounds(billboardImage);
                     int w = (int)Math.Ceiling(bounds.Right - bounds.Left);
                     int h = (int)Math.Ceiling(bounds.Bottom - bounds.Top);
                     if (w <= 0 || h <= 0) continue;
@@ -129,7 +130,7 @@ namespace ObjLoader.Rendering.Managers
                         d2dContext.BeginDraw();
                         d2dContext.Clear(_clearColor);
                         d2dContext.Transform = System.Numerics.Matrix3x2.CreateTranslation(-bounds.Left, -bounds.Top);
-                        d2dContext.DrawImage(b.Desc.Image);
+                        d2dContext.DrawImage(billboardImage);
                         d2dContext.EndDraw();
                     }
                     catch

@@ -2,7 +2,7 @@ namespace ObjLoader.Api.Core
 {
     public static class SceneContext
     {
-        private static readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.NoRecursion);
+        private static readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.SupportsRecursion);
         private static readonly Dictionary<string, (ISceneServices Services, Guid Token)> _registry = new();
 
         public static event EventHandler<SceneRegistrationChangedEventArgs>? RegistrationChanged;

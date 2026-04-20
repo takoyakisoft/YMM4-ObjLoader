@@ -188,6 +188,15 @@ public sealed class ObjLoaderSource : IShapeSource2
         _lastDesc = desc;
         _hasDesc = true;
 
+        if (desc != null && desc.FPS > 0)
+        {
+            _parameter.Duration = (double)desc.ItemDuration.Frame / desc.FPS;
+        }
+        else
+        {
+            _parameter.Duration = 0.0;
+        }
+
         lock (SharedRenderLock)
         {
             if (_isDisposed) return;
@@ -240,22 +249,13 @@ public sealed class ObjLoaderSource : IShapeSource2
         return _commandList;
     }
 
-    private void UpdateInternal(TimelineItemSourceDescription desc)
+    private void UpdateInternal(TimelineItemSourceDescription? desc)
     {
         if (_isDisposed) return;
 
         if (_sceneApi != null)
         {
             _sceneDrawManager.UpdateFromApi(_sceneApi.DrawInternal);
-        }
-
-        if (desc != null && desc.FPS > 0)
-        {
-            _parameter.Duration = (double)desc.ItemDuration.Frame / desc.FPS;
-        }
-        else
-        {
-            _parameter.Duration = 0.0;
         }
 
         if (!_parameter.IsSwitchingLayer)

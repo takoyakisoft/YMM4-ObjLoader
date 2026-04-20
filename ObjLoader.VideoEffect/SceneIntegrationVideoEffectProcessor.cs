@@ -11,23 +11,17 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
 {
     private readonly SceneIntegrationVideoEffect item;
     private readonly IGraphicsDevicesAndContext devices;
-    private ID2D1Image? input;
+    private volatile ID2D1Image? input;
     private SceneObjectId? objectId;
-    private readonly BillboardDescriptor lastDescriptor = new();
     private readonly Lock syncLock = new();
-    private ISceneServices? _cachedServices;
-    private nint _cachedDevicePointer;
+    private volatile ISceneServices? _cachedServices;
+    private readonly nint _cachedDevicePointer;
+    private volatile bool _disposed;
+    private volatile BillboardDescriptor? _lastSnapshot;
+    private ID2D1Image? lastSizedImage;
+    private Vector2 lastImageSize;
 
-    public ID2D1Image Output
-    {
-        get
-        {
-            lock (syncLock)
-            {
-                return input ?? throw new NullReferenceException(nameof(input) + " is null");
-            }
-        }
-    }
+    public ID2D1Image Output => input ?? throw new NullReferenceException(nameof(input) + " is null");
 
     public SceneIntegrationVideoEffectProcessor(SceneIntegrationVideoEffect item, IGraphicsDevicesAndContext devices)
     {
@@ -53,106 +47,114 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         item.TriggerUpdate();
     }
 
-    private ID2D1Image? lastSizedImage;
-    private Vector2 lastImageSize;
-
     public DrawDescription Update(EffectDescription effectDescription)
     {
+        if (_disposed) return effectDescription.DrawDescription with { Opacity = 0 };
+
+        var currentInput = input;
+        if (currentInput == null)
+        {
+            TryRemoveBillboard();
+            return effectDescription.DrawDescription with { Opacity = 0 };
+        }
+
         var frame = effectDescription.ItemPosition.Frame;
         var length = effectDescription.ItemDuration.Frame <= 0 ? 1 : effectDescription.ItemDuration.Frame;
         var fps = effectDescription.FPS <= 0 ? 60 : effectDescription.FPS;
 
-        if (input != null)
+        var x = (float)item.X.GetValue(frame, length, fps);
+        var y = (float)item.Y.GetValue(frame, length, fps);
+        var z = (float)item.Z.GetValue(frame, length, fps);
+        var scale = (float)item.Scale.GetValue(frame, length, fps);
+        var scaleX = (float)item.ScaleX.GetValue(frame, length, fps);
+        var scaleY = (float)item.ScaleY.GetValue(frame, length, fps);
+        var rotX = (float)item.RotationX.GetValue(frame, length, fps);
+        var rotY = (float)item.RotationY.GetValue(frame, length, fps);
+        var rotZ = (float)item.RotationZ.GetValue(frame, length, fps);
+        var opacity = (float)item.Opacity.GetValue(frame, length, fps);
+
+        var baseSize = GetImageSize(currentInput);
+        var size = new Vector2(-(baseSize.X * 0.01f * scale * scaleX), baseSize.Y * 0.01f * scale * scaleY);
+
+        var descriptor = new BillboardDescriptor
         {
-            var x = (float)item.X.GetValue(frame, length, fps);
-            var y = (float)item.Y.GetValue(frame, length, fps);
-            var z = (float)item.Z.GetValue(frame, length, fps);
-            var scale = (float)item.Scale.GetValue(frame, length, fps);
-            var scaleX = (float)item.ScaleX.GetValue(frame, length, fps);
-            var scaleY = (float)item.ScaleY.GetValue(frame, length, fps);
-            var rotX = (float)item.RotationX.GetValue(frame, length, fps);
-            var rotY = (float)item.RotationY.GetValue(frame, length, fps);
-            var rotZ = (float)item.RotationZ.GetValue(frame, length, fps);
-            var opacity = (float)item.Opacity.GetValue(frame, length, fps);
+            Image = currentInput,
+            WorldPosition = new Vector3(x, y, z),
+            Size = size,
+            Rotation = new Vector3(rotX, rotY, rotZ),
+            FaceCamera = item.FaceCamera,
+            Opacity = opacity
+        };
 
-            var baseSize = GetImageSize(input);
-            var size = new Vector2(-(baseSize.X * 0.01f * scale * scaleX), baseSize.Y * 0.01f * scale * scaleY);
+        _lastSnapshot = descriptor;
 
-            var services = GetSceneServices();
+        var services = GetSceneServices();
+        bool triggerNeeded = false;
+
+        if (services?.Draw != null)
+        {
             lock (syncLock)
             {
-                lastDescriptor.Image = input;
-                lastDescriptor.WorldPosition = new Vector3(x, y, z);
-                lastDescriptor.Size = size;
-                lastDescriptor.Rotation = new Vector3(rotX, rotY, rotZ);
-                lastDescriptor.FaceCamera = item.FaceCamera;
-                lastDescriptor.Opacity = opacity;
-
-                if (services?.Draw != null)
-                {
-                    RegisterOrUpdateBillboard(services);
-                }
+                triggerNeeded = ApplyBillboard(services, descriptor);
             }
         }
-        else
+
+        if (triggerNeeded)
         {
-            RemoveBillboard();
+            item.TriggerUpdate();
+            services?.TriggerUpdate();
         }
 
         return effectDescription.DrawDescription with { Opacity = 0 };
     }
 
-    private void RegisterOrUpdateBillboard(ISceneServices services)
+    private bool ApplyBillboard(ISceneServices services, BillboardDescriptor descriptor)
     {
-        if (services.Draw == null) return;
+        if (services.Draw == null) return false;
 
         try
         {
-            bool isNew = !objectId.HasValue;
-            if (isNew)
+            if (!objectId.HasValue)
             {
-                objectId = services.Draw.CreateDynamicBillboard(lastDescriptor);
-            }
-            else
-            {
-                var currentId = objectId!.Value;
-                if (!services.Draw.UpdateBillboard(currentId, lastDescriptor))
-                {
-                    objectId = services.Draw.CreateDynamicBillboard(lastDescriptor);
-                    isNew = true;
-                }
+                objectId = services.Draw.CreateDynamicBillboard(descriptor);
+                return true;
             }
 
-            if (isNew)
+            if (!services.Draw.UpdateBillboard(objectId.Value, descriptor))
             {
-                item.TriggerUpdate();
-                services.TriggerUpdate();
+                objectId = services.Draw.CreateDynamicBillboard(descriptor);
+                return true;
             }
+
+            return false;
         }
         catch
         {
             objectId = null;
+            return false;
         }
     }
 
-    private void RemoveBillboard()
+    private void TryRemoveBillboard()
     {
-        var services = GetSceneServices();
+        SceneObjectId? removedId;
         lock (syncLock)
         {
-            if (!objectId.HasValue) return;
-
-            try
-            {
-                services?.Draw?.RemoveBillboard(objectId.Value);
-                objectId = null;
-                services?.TriggerUpdate();
-            }
-            catch
-            {
-                objectId = null;
-            }
+            removedId = objectId;
+            if (!removedId.HasValue) return;
+            objectId = null;
         }
+
+        ISceneServices? services = null;
+        try
+        {
+            services = GetSceneServices();
+            services?.Draw?.RemoveBillboard(removedId.Value);
+        }
+        catch { }
+
+        try { services?.TriggerUpdate(); }
+        catch { }
     }
 
     private Vector2 GetImageSize(ID2D1Image image)
@@ -162,7 +164,7 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
             return lastImageSize;
         }
 
-        Vector2 size = new Vector2(100, 100);
+        var size = new Vector2(100, 100);
 
         if (image is ID2D1Bitmap bitmap)
         {
@@ -175,9 +177,7 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
                 var bounds = devices.DeviceContext.GetImageLocalBounds(image);
                 size = new Vector2(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
             }
-            catch
-            {
-            }
+            catch { }
         }
 
         lastSizedImage = image;
@@ -187,32 +187,48 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
 
     public void ClearInput()
     {
-        lock (syncLock)
-        {
-            input = null;
-        }
-        RemoveBillboard();
+        input = null;
+        TryRemoveBillboard();
     }
 
-    public void SetInput(ID2D1Image? input)
+    public void SetInput(ID2D1Image? newInput)
     {
+        input = newInput;
+
+        if (newInput == null || _disposed) return;
+
         var services = GetSceneServices();
+        if (services?.Draw == null) return;
+
+        var prev = _lastSnapshot;
+        var descriptor = prev != null
+            ? new BillboardDescriptor
+            {
+                Image = newInput,
+                WorldPosition = prev.WorldPosition,
+                Size = prev.Size,
+                Rotation = prev.Rotation,
+                FaceCamera = prev.FaceCamera,
+                Opacity = prev.Opacity
+            }
+            : new BillboardDescriptor { Image = newInput };
+
+        bool triggerNeeded;
         lock (syncLock)
         {
-            this.input = input;
-            if (this.input != null)
-            {
-                lastDescriptor.Image = this.input;
-                if (services?.Draw != null)
-                {
-                    RegisterOrUpdateBillboard(services);
-                }
-            }
+            triggerNeeded = ApplyBillboard(services, descriptor);
+        }
+
+        if (triggerNeeded)
+        {
+            item.TriggerUpdate();
+            services.TriggerUpdate();
         }
     }
 
     public void Dispose()
     {
+        _disposed = true;
         ObjLoaderApi.SceneRegistrationChanged -= OnSceneRegistrationChanged;
         item.X.PropertyChanged -= OnPropertyChanged;
         item.Y.PropertyChanged -= OnPropertyChanged;
@@ -225,41 +241,64 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         item.RotationZ.PropertyChanged -= OnPropertyChanged;
         item.Opacity.PropertyChanged -= OnPropertyChanged;
         item.PropertyChanged -= OnPropertyChanged;
-        RemoveBillboard();
-        lock (syncLock)
-        {
-            _cachedServices = null;
-        }
+        TryRemoveBillboard();
+        _cachedServices = null;
     }
 
     private void OnSceneRegistrationChanged(object? sender, SceneRegistrationChangedEventArgs e)
     {
+        if (_disposed) return;
+
         if (e.IsRegistered)
         {
             ISceneServices? services = null;
-            if (ObjLoaderApi.TryGetScene(e.InstanceId, out var s) && s != null && !s.IsDisposed)
+            try
             {
-                services = s;
+                if (ObjLoaderApi.TryGetScene(e.InstanceId, out var s) && s != null && !s.IsDisposed)
+                {
+                    services = s;
+                }
+            }
+            catch { return; }
+
+            _cachedServices = null;
+
+            if (services == null || _cachedDevicePointer == IntPtr.Zero || services.ContextPointer != _cachedDevicePointer)
+            {
+                return;
             }
 
+            var currentInput = input;
+            if (currentInput == null) return;
+
+            var prev = _lastSnapshot;
+            var descriptor = prev != null
+                ? new BillboardDescriptor
+                {
+                    Image = currentInput,
+                    WorldPosition = prev.WorldPosition,
+                    Size = prev.Size,
+                    Rotation = prev.Rotation,
+                    FaceCamera = prev.FaceCamera,
+                    Opacity = prev.Opacity
+                }
+                : new BillboardDescriptor { Image = currentInput };
+
+            bool triggerNeeded;
             lock (syncLock)
             {
-                _cachedServices = null;
-                if (lastDescriptor.Image != null && services != null)
-                {
-                    if (_cachedDevicePointer != IntPtr.Zero && services.ContextPointer == _cachedDevicePointer)
-                    {
-                        RegisterOrUpdateBillboard(services);
-                    }
-                }
+                triggerNeeded = ApplyBillboard(services, descriptor);
+            }
+
+            if (triggerNeeded)
+            {
+                item.TriggerUpdate();
+                services.TriggerUpdate();
             }
         }
         else
         {
-            lock (syncLock)
-            {
-                _cachedServices = null;
-            }
+            _cachedServices = null;
         }
     }
 
@@ -282,9 +321,8 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
                 return services;
             }
         }
-        catch
-        {
-        }
+        catch { }
+
         return null;
     }
 }
