@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using YukkuriMovieMaker.Commons;
 using YukkuriMovieMaker.Controls;
 using YukkuriMovieMaker.Exo;
@@ -26,31 +26,31 @@ namespace ObjLoader.VideoEffect
         public Animation Z { get; } = new Animation(5, -1000, 1000);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_Scale), Description = nameof(Texts.Desc_Scale), ResourceType = typeof(Texts))]
-        [AnimationSlider("F2", "倍", 0, 100)]
+        [AnimationSlider("F2", "x", 0, 100)]
         public Animation Scale { get; } = new Animation(1, 0, 1000);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_ScaleX), Description = nameof(Texts.Desc_ScaleX), ResourceType = typeof(Texts))]
-        [AnimationSlider("F2", "倍", 0, 100)]
+        [AnimationSlider("F2", "x", 0, 100)]
         public Animation ScaleX { get; } = new Animation(1, 0, 1000);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_ScaleY), Description = nameof(Texts.Desc_ScaleY), ResourceType = typeof(Texts))]
-        [AnimationSlider("F2", "倍", 0, 100)]
+        [AnimationSlider("F2", "x", 0, 100)]
         public Animation ScaleY { get; } = new Animation(1, 0, 1000);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_RotationX), Description = nameof(Texts.Desc_RotationX), ResourceType = typeof(Texts))]
-        [AnimationSlider("F1", "度", -360, 360)]
+        [AnimationSlider("F1", "°", -360, 360)]
         public Animation RotationX { get; } = new Animation(0, -3600, 3600);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_RotationY), Description = nameof(Texts.Desc_RotationY), ResourceType = typeof(Texts))]
-        [AnimationSlider("F1", "度", -360, 360)]
+        [AnimationSlider("F1", "°", -360, 360)]
         public Animation RotationY { get; } = new Animation(0, -3600, 3600);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_RotationZ), Description = nameof(Texts.Desc_RotationZ), ResourceType = typeof(Texts))]
-        [AnimationSlider("F1", "度", -360, 360)]
+        [AnimationSlider("F1", "°", -360, 360)]
         public Animation RotationZ { get; } = new Animation(0, -3600, 3600);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_Opacity), Description = nameof(Texts.Desc_Opacity), ResourceType = typeof(Texts))]
-        [AnimationSlider("F2", "倍", 0, 1)]
+        [AnimationSlider("F2", "x", 0, 1)]
         public Animation Opacity { get; } = new Animation(1, 0, 1);
 
         [Display(GroupName = nameof(Texts.Group_Transform), Name = nameof(Texts.Name_FaceCamera), Description = nameof(Texts.Desc_FaceCamera), ResourceType = typeof(Texts))]
