@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -59,7 +59,7 @@ namespace ObjLoader.SourceGenerator
             sb.AppendLine("using ObjLoader.ViewModels;");
             sb.AppendLine("using ObjLoader.ViewModels.Settings;");
             sb.AppendLine("using ObjLoader.Attributes;");
-            sb.AppendLine("using ObjLoader.Settings;");
+            sb.AppendLine("using ObjLoader.Settings.Interfaces;");
             sb.AppendLine("using YukkuriMovieMaker.Commons;");
             sb.AppendLine("using System.ComponentModel;");
             sb.AppendLine("using System.Windows.Data;");

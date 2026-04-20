@@ -1,4 +1,5 @@
-﻿using System.Collections.ObjectModel;
+using ObjLoader.Settings.Interfaces;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
@@ -193,7 +194,7 @@ namespace ObjLoader.ViewModels.Settings
                 };
             }
 
-            if (ObjLoader.Settings.SettingsInitializerRegistry.TryInitialize(_target, this))
+            if (SettingsInitializerRegistry.TryInitialize(_target, this))
             {
                 return;
             }

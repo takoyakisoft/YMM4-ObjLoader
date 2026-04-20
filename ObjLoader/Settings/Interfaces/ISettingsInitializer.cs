@@ -1,4 +1,4 @@
-namespace ObjLoader.Settings
+namespace ObjLoader.Settings.Interfaces
 {
     public interface ISettingsInitializer
     {
