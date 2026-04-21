@@ -12,15 +12,17 @@ namespace ObjLoader.Rendering.Managers
     {
         public ID3D11Texture2D Texture { get; }
         public ID3D11ShaderResourceView Srv { get; }
-        public ID2D1Bitmap1 D2dTarget { get; }
+        public ID2D1Bitmap1? D2dTarget { get; }
         public int Width { get; }
         public int Height { get; }
         public nint SharedHandle { get; }
+        public bool IsSharedResource { get; }
 
         public BillboardTextureCache(ID3D11Device device, ID2D1DeviceContext d2dContext, int width, int height)
         {
             Width = width;
             Height = height;
+            IsSharedResource = false;
 
             var texDesc = new Texture2DDescription
             {
@@ -47,6 +49,18 @@ namespace ObjLoader.Rendering.Managers
                 96.0f, 96.0f,
                 BitmapOptions.Target | BitmapOptions.CannotDraw);
             D2dTarget = d2dContext.CreateBitmapFromDxgiSurface(surface, bitmapProps);
+        }
+
+        public BillboardTextureCache(ID3D11Device device, nint sourceSharedHandle, int width, int height)
+        {
+            Width = width;
+            Height = height;
+            SharedHandle = sourceSharedHandle;
+            IsSharedResource = true;
+
+            Texture = device.OpenSharedResource<ID3D11Texture2D>(sourceSharedHandle);
+            Srv = device.CreateShaderResourceView(Texture);
+            D2dTarget = null;
         }
 
         public void Dispose()
@@ -95,56 +109,7 @@ namespace ObjLoader.Rendering.Managers
             foreach (var b in currentBillboards)
             {
                 _currentIds.Add(b.Id);
-                var billboardImage = b.Desc?.Image;
-                if (billboardImage == null || billboardImage.NativePointer == IntPtr.Zero) continue;
-
-                try
-                {
-                    var bounds = _devices.DeviceContext.GetImageLocalBounds(billboardImage);
-                    int w = (int)Math.Ceiling(bounds.Right - bounds.Left);
-                    int h = (int)Math.Ceiling(bounds.Bottom - bounds.Top);
-                    if (w <= 0 || h <= 0) continue;
-
-                    if (_textureCaches.TryGetValue(b.Id, out var cache))
-                    {
-                        if (cache.Width != w || cache.Height != h)
-                        {
-                            cache.Dispose();
-                            _textureCaches.Remove(b.Id);
-                            cache = null;
-                        }
-                    }
-
-                    if (cache == null)
-                    {
-                        cache = new BillboardTextureCache(_devices.D3D.Device, _devices.DeviceContext, w, h);
-                        _textureCaches[b.Id] = cache;
-                    }
-
-                    var d2dContext = _devices.DeviceContext;
-                    var oldTarget = d2dContext.Target;
-                    var oldTransform = d2dContext.Transform;
-                    try
-                    {
-                        d2dContext.Target = cache.D2dTarget;
-                        d2dContext.BeginDraw();
-                        d2dContext.Clear(_clearColor);
-                        d2dContext.Transform = System.Numerics.Matrix3x2.CreateTranslation(-bounds.Left, -bounds.Top);
-                        d2dContext.DrawImage(billboardImage);
-                        d2dContext.EndDraw();
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        d2dContext.Target = oldTarget;
-                        d2dContext.Transform = oldTransform;
-                    }
-                }
-                catch
-                {
-                }
+                TransferBillboardToTexture(b.Id, b.Desc);
             }
 
             _keysToRemove.Clear();
@@ -161,6 +126,90 @@ namespace ObjLoader.Rendering.Managers
             _isDirty = true;
             UpdateCount++;
             Updated?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void TransferBillboardToTexture(Api.Core.SceneObjectId id, BillboardDescriptor? desc)
+        {
+            if (desc == null) return;
+
+            if (desc.SharedHandle != IntPtr.Zero && desc.SharedWidth > 0 && desc.SharedHeight > 0)
+            {
+                TransferBillboardFromSharedHandle(id, desc.SharedHandle, desc.SharedWidth, desc.SharedHeight);
+                return;
+            }
+
+            var billboardImage = desc.Image;
+            if (billboardImage == null) return;
+
+            nint nativePtr;
+            try { nativePtr = billboardImage.NativePointer; }
+            catch { return; }
+            if (nativePtr == IntPtr.Zero) return;
+
+            Vortice.RawRectF bounds;
+            try { bounds = _devices.DeviceContext.GetImageLocalBounds(billboardImage); }
+            catch { return; }
+
+            int w = (int)Math.Ceiling((double)(bounds.Right - bounds.Left));
+            int h = (int)Math.Ceiling((double)(bounds.Bottom - bounds.Top));
+            if (w <= 0 || h <= 0) return;
+
+            if (_textureCaches.TryGetValue(id, out var cache) && (cache.Width != w || cache.Height != h || cache.IsSharedResource))
+            {
+                cache.Dispose();
+                _textureCaches.Remove(id);
+                cache = null;
+            }
+
+            if (cache == null)
+            {
+                try
+                {
+                    cache = new BillboardTextureCache(_devices.D3D.Device, _devices.DeviceContext, w, h);
+                    _textureCaches[id] = cache;
+                }
+                catch { return; }
+            }
+
+            var d2dContext = _devices.DeviceContext;
+            var oldTarget = d2dContext.Target;
+            var oldTransform = d2dContext.Transform;
+            try
+            {
+                d2dContext.Target = cache.D2dTarget;
+                d2dContext.BeginDraw();
+                d2dContext.Clear(_clearColor);
+                d2dContext.Transform = System.Numerics.Matrix3x2.CreateTranslation(-bounds.Left, -bounds.Top);
+                d2dContext.DrawImage(billboardImage);
+                d2dContext.EndDraw();
+            }
+            catch
+            {
+                try { d2dContext.EndDraw(); } catch { }
+            }
+            finally
+            {
+                try { d2dContext.Target = oldTarget; } catch { try { d2dContext.Target = null; } catch { } }
+                try { d2dContext.Transform = oldTransform; } catch { }
+            }
+        }
+
+        private void TransferBillboardFromSharedHandle(Api.Core.SceneObjectId id, nint sharedHandle, int w, int h)
+        {
+            if (_textureCaches.TryGetValue(id, out var existing))
+            {
+                if (existing.IsSharedResource && existing.SharedHandle == sharedHandle && existing.Width == w && existing.Height == h)
+                    return;
+                existing.Dispose();
+                _textureCaches.Remove(id);
+            }
+
+            try
+            {
+                var cache = new BillboardTextureCache(_devices.D3D.Device, sharedHandle, w, h);
+                _textureCaches[id] = cache;
+            }
+            catch { }
         }
 
         public IReadOnlyCollection<ExternalObjectHandle> GetExternalObjects() => _externalObjects;

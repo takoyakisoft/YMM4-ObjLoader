@@ -1,11 +1,16 @@
 using ObjLoader.Api;
 using ObjLoader.Api.Core;
 using ObjLoader.Api.Draw;
+using ObjLoader.Rendering.Core;
 using ObjLoader.VideoEffect;
 using System.Numerics;
+using Vortice.DCommon;
 using Vortice.Direct2D1;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
 using YukkuriMovieMaker.Commons;
 using YukkuriMovieMaker.Player.Video;
+using AlphaMode = Vortice.DCommon.AlphaMode;
 
 internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
 {
@@ -20,6 +25,11 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
     private volatile BillboardDescriptor? _lastSnapshot;
     private ID2D1Image? lastSizedImage;
     private Vector2 lastImageSize;
+    private volatile ID2D1Bitmap1? _stagingBitmap;
+    private volatile ID2D1Bitmap1? _expiredStagingBitmap;
+    private int _stagingW;
+    private int _stagingH;
+    private nint _stagingSharedHandle;
 
     public ID2D1Image Output => input ?? throw new NullReferenceException(nameof(input) + " is null");
 
@@ -76,9 +86,21 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         var baseSize = GetImageSize(currentInput);
         var size = new Vector2(-(baseSize.X * 0.01f * scale * scaleX), baseSize.Y * 0.01f * scale * scaleY);
 
+        TryPreRenderToStaging(currentInput, baseSize);
+
+        var stageImage = (ID2D1Image?)_stagingBitmap;
+        if (stageImage == null)
+        {
+            TryRemoveBillboard();
+            return effectDescription.DrawDescription with { Opacity = 0 };
+        }
+
         var descriptor = new BillboardDescriptor
         {
-            Image = currentInput,
+            Image = stageImage,
+            SharedHandle = _stagingSharedHandle,
+            SharedWidth = _stagingW,
+            SharedHeight = _stagingH,
             WorldPosition = new Vector3(x, y, z),
             Size = size,
             Rotation = new Vector3(rotX, rotY, rotZ),
@@ -106,6 +128,124 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         }
 
         return effectDescription.DrawDescription with { Opacity = 0 };
+    }
+
+    private void TryPreRenderToStaging(ID2D1Image source, Vector2 baseSize)
+    {
+        int w = Math.Max(1, (int)Math.Ceiling((double)baseSize.X));
+        int h = Math.Max(1, (int)Math.Ceiling((double)baseSize.Y));
+
+        bool hasStagingAlready = _stagingBitmap != null && _stagingSharedHandle != IntPtr.Zero;
+        bool lockTaken = false;
+        if (hasStagingAlready)
+        {
+            Monitor.TryEnter(ObjLoaderSource.SharedRenderLock, 0, ref lockTaken);
+            if (!lockTaken) return;
+        }
+        else
+        {
+            Monitor.Enter(ObjLoaderSource.SharedRenderLock, ref lockTaken);
+        }
+        try
+        {
+            var expired = Interlocked.Exchange(ref _expiredStagingBitmap, null);
+            expired?.Dispose();
+
+            Vortice.RawRectF bounds = default;
+            bool hasBounds = false;
+            try
+            {
+                bounds = devices.DeviceContext.GetImageLocalBounds(source);
+                hasBounds = true;
+            }
+            catch { }
+
+            if (hasBounds)
+            {
+                int bw = (int)Math.Ceiling((double)(bounds.Right - bounds.Left));
+                int bh = (int)Math.Ceiling((double)(bounds.Bottom - bounds.Top));
+                if (bw > 0) w = bw;
+                if (bh > 0) h = bh;
+            }
+
+            if (w <= 0 || h <= 0) return;
+
+            var current = _stagingBitmap;
+            if (current != null && (_stagingW != w || _stagingH != h))
+            {
+                Interlocked.Exchange(ref _expiredStagingBitmap, current);
+                _stagingBitmap = null;
+                _stagingSharedHandle = IntPtr.Zero;
+                current = null;
+            }
+
+            if (current == null)
+            {
+                try
+                {
+                    nint sharedHandle;
+                    current = CreateStagingBitmap(w, h, out sharedHandle);
+                    _stagingW = w;
+                    _stagingH = h;
+                    _stagingSharedHandle = sharedHandle;
+                    _stagingBitmap = current;
+                }
+                catch { return; }
+            }
+
+            var d2d = devices.DeviceContext;
+            var oldTarget = d2d.Target;
+            var oldTransform = d2d.Transform;
+            try
+            {
+                d2d.Target = current;
+                d2d.BeginDraw();
+                d2d.Clear(null);
+                if (hasBounds)
+                    d2d.Transform = System.Numerics.Matrix3x2.CreateTranslation(-bounds.Left, -bounds.Top);
+                d2d.DrawImage(source);
+                d2d.EndDraw();
+            }
+            catch
+            {
+                try { d2d.EndDraw(); } catch { }
+            }
+            finally
+            {
+                try { d2d.Target = oldTarget; } catch { try { d2d.Target = null; } catch { } }
+                try { d2d.Transform = oldTransform; } catch { }
+            }
+        }
+        finally
+        {
+            if (lockTaken) Monitor.Exit(ObjLoaderSource.SharedRenderLock);
+        }
+    }
+
+    private ID2D1Bitmap1 CreateStagingBitmap(int w, int h, out nint sharedHandle)
+    {
+        var texDesc = new Texture2DDescription
+        {
+            Width = w,
+            Height = h,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.B8G8R8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
+            CPUAccessFlags = CpuAccessFlags.None,
+            MiscFlags = ResourceOptionFlags.Shared
+        };
+        using var tex = devices.D3D.Device.CreateTexture2D(texDesc);
+        using var dxgiResource = tex.QueryInterface<IDXGIResource>();
+        sharedHandle = dxgiResource.SharedHandle;
+        using var surface = tex.QueryInterface<IDXGISurface>();
+        var bitmapProps = new BitmapProperties1(
+            new PixelFormat(Format.B8G8R8A8_UNorm, AlphaMode.Premultiplied),
+            96.0f, 96.0f,
+            BitmapOptions.Target);
+        return devices.DeviceContext.CreateBitmapFromDxgiSurface(surface, bitmapProps);
     }
 
     private bool ApplyBillboard(ISceneServices services, BillboardDescriptor descriptor)
@@ -166,6 +306,11 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
 
         var size = new Vector2(100, 100);
 
+        nint nativePtr;
+        try { nativePtr = image.NativePointer; }
+        catch { return size; }
+        if (nativePtr == IntPtr.Zero) return size;
+
         if (image is ID2D1Bitmap bitmap)
         {
             size = new Vector2(bitmap.Size.Width, bitmap.Size.Height);
@@ -177,7 +322,12 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
                 var bounds = devices.DeviceContext.GetImageLocalBounds(image);
                 size = new Vector2(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
             }
-            catch { }
+            catch
+            {
+                lastSizedImage = null;
+                lastImageSize = default;
+                return size;
+            }
         }
 
         lastSizedImage = image;
@@ -188,6 +338,11 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
     public void ClearInput()
     {
         input = null;
+        lastSizedImage = null;
+        lastImageSize = default;
+        _stagingSharedHandle = IntPtr.Zero;
+        Interlocked.Exchange(ref _stagingBitmap, null)?.Dispose();
+        Interlocked.Exchange(ref _expiredStagingBitmap, null)?.Dispose();
         TryRemoveBillboard();
     }
 
@@ -204,14 +359,23 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         var descriptor = prev != null
             ? new BillboardDescriptor
             {
-                Image = newInput,
+                Image = _stagingBitmap ?? newInput,
+                SharedHandle = _stagingSharedHandle,
+                SharedWidth = _stagingW,
+                SharedHeight = _stagingH,
                 WorldPosition = prev.WorldPosition,
                 Size = prev.Size,
                 Rotation = prev.Rotation,
                 FaceCamera = prev.FaceCamera,
                 Opacity = prev.Opacity
             }
-            : new BillboardDescriptor { Image = newInput };
+            : new BillboardDescriptor
+            {
+                Image = _stagingBitmap ?? newInput,
+                SharedHandle = _stagingSharedHandle,
+                SharedWidth = _stagingW,
+                SharedHeight = _stagingH
+            };
 
         bool triggerNeeded;
         lock (syncLock)
@@ -243,6 +407,8 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
         item.PropertyChanged -= OnPropertyChanged;
         TryRemoveBillboard();
         _cachedServices = null;
+        Interlocked.Exchange(ref _stagingBitmap, null)?.Dispose();
+        Interlocked.Exchange(ref _expiredStagingBitmap, null)?.Dispose();
     }
 
     private void OnSceneRegistrationChanged(object? sender, SceneRegistrationChangedEventArgs e)
@@ -275,14 +441,23 @@ internal class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
             var descriptor = prev != null
                 ? new BillboardDescriptor
                 {
-                    Image = currentInput,
+                    Image = _stagingBitmap ?? currentInput,
+                    SharedHandle = _stagingSharedHandle,
+                    SharedWidth = _stagingW,
+                    SharedHeight = _stagingH,
                     WorldPosition = prev.WorldPosition,
                     Size = prev.Size,
                     Rotation = prev.Rotation,
                     FaceCamera = prev.FaceCamera,
                     Opacity = prev.Opacity
                 }
-                : new BillboardDescriptor { Image = currentInput };
+                : new BillboardDescriptor
+                {
+                    Image = _stagingBitmap ?? currentInput,
+                    SharedHandle = _stagingSharedHandle,
+                    SharedWidth = _stagingW,
+                    SharedHeight = _stagingH
+                };
 
             bool triggerNeeded;
             lock (syncLock)

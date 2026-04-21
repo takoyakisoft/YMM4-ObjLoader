@@ -6,6 +6,9 @@ namespace ObjLoader.Api.Draw
     public sealed class BillboardDescriptor
     {
         public ID2D1Image? Image { get; set; }
+        public nint SharedHandle { get; set; } = IntPtr.Zero;
+        public int SharedWidth { get; set; }
+        public int SharedHeight { get; set; }
         public Vector3 WorldPosition { get; set; }
         public Vector2 Size { get; set; } = Vector2.One;
         public int WorldId { get; set; } = 0;
