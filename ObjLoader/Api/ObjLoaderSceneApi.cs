@@ -81,6 +81,7 @@ namespace ObjLoader.Api
         }
 
         internal SceneDrawApi DrawInternal => _draw;
+        internal long GetBillboardVersion() => _draw.GetBillboardVersion();
         public ID2D1Image? ForceRender() => _forceRenderProvider();
 
         public void TriggerUpdate()

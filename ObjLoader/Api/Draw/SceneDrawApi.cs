@@ -11,6 +11,10 @@ namespace ObjLoader.Api.Draw
         private readonly List<ExternalObjectHandle> _visibleExternalObjectsBuf = new();
         private readonly List<(SceneObjectId Id, BillboardDescriptor Desc)> _billboardsBuf = new();
 
+        private long _billboardVersion;
+
+        internal long GetBillboardVersion() => Interlocked.Read(ref _billboardVersion);
+
         public SceneObjectId AddExternalObject(ExternalObjectDescriptor descriptor)
         {
             if (descriptor == null) throw new ArgumentNullException(nameof(descriptor));
@@ -57,6 +61,7 @@ namespace ObjLoader.Api.Draw
             if (descriptor == null) throw new ArgumentNullException(nameof(descriptor));
             var id = SceneObjectId.NewId();
             _billboards[id] = descriptor;
+            Interlocked.Increment(ref _billboardVersion);
             return id;
         }
 
@@ -65,12 +70,15 @@ namespace ObjLoader.Api.Draw
             if (descriptor == null) throw new ArgumentNullException(nameof(descriptor));
             if (!_billboards.ContainsKey(id)) return false;
             _billboards[id] = descriptor;
+            Interlocked.Increment(ref _billboardVersion);
             return true;
         }
 
         public bool RemoveBillboard(SceneObjectId id)
         {
-            return _billboards.TryRemove(id, out _);
+            bool removed = _billboards.TryRemove(id, out _);
+            if (removed) Interlocked.Increment(ref _billboardVersion);
+            return removed;
         }
 
         public IReadOnlyList<SceneObjectId> GetBillboardIds()

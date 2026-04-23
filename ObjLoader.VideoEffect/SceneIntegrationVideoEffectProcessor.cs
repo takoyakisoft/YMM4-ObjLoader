@@ -14,20 +14,11 @@ using AlphaMode = Vortice.DCommon.AlphaMode;
 
 internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcessor
 {
-    private sealed record BillboardSnapshot(
-        Vector3 WorldPosition,
-        Vector2 Size,
-        Vector3 Rotation,
-        bool FaceCamera,
-        float Opacity,
-        nint SharedHandle,
-        int SharedWidth,
-        int SharedHeight);
-
     private readonly SceneIntegrationVideoEffect _item;
     private readonly IGraphicsDevicesAndContext _devices;
     private readonly nint _cachedDevicePointer;
     private readonly Lock _idLock = new();
+    private readonly BillboardDescriptor _descriptorPool = new();
 
     private volatile ID2D1Image? _input;
     private volatile bool _disposed;
@@ -35,8 +26,6 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
     private SceneObjectId? _objectId;
     private volatile ISceneServices? _cachedServices;
     private string? _cachedSceneInstanceId;
-
-    private volatile BillboardSnapshot? _lastSnapshot;
 
     private ID2D1Image? _lastSizedImage;
     private Vector2 _lastImageSize;
@@ -46,7 +35,7 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
     private int _stagingW;
     private int _stagingH;
     private nint _stagingSharedHandle;
-    private int _needsSceneTrigger;
+    private int _needsItemTrigger;
 
     public ID2D1Image Output => _input ?? throw new NullReferenceException(nameof(_input) + " is null");
 
@@ -71,7 +60,7 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        Interlocked.Exchange(ref _needsSceneTrigger, 1);
+        Interlocked.Exchange(ref _needsItemTrigger, 1);
         _item.TriggerUpdate();
     }
 
@@ -107,25 +96,14 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
         bool hasStagingAlready = _stagingBitmap != null && _stagingSharedHandle != IntPtr.Zero;
         bool lockTaken = false;
         if (hasStagingAlready)
-        {
             Monitor.TryEnter(ObjLoaderSource.SharedRenderLock, 0, ref lockTaken);
-        }
         else
-        {
             Monitor.Enter(ObjLoaderSource.SharedRenderLock, ref lockTaken);
-        }
 
-        bool stagingWasNewlyCreated = false;
         if (lockTaken)
         {
-            try
-            {
-                stagingWasNewlyCreated = PreRenderToStagingCore(currentInput, baseSize);
-            }
-            finally
-            {
-                Monitor.Exit(ObjLoaderSource.SharedRenderLock);
-            }
+            try { PreRenderToStagingCore(currentInput, baseSize); }
+            finally { Monitor.Exit(ObjLoaderSource.SharedRenderLock); }
             FlushD3DContext();
         }
 
@@ -136,35 +114,27 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
             return effectDescription.DrawDescription with { Opacity = 0 };
         }
 
-        var descriptor = new BillboardDescriptor
-        {
-            Image = stagingBitmap,
-            SharedHandle = _stagingSharedHandle,
-            SharedWidth = _stagingW,
-            SharedHeight = _stagingH,
-            WorldPosition = new Vector3(x, y, z),
-            Size = size,
-            Rotation = new Vector3(rotX, rotY, rotZ),
-            FaceCamera = _item.FaceCamera,
-            Opacity = opacity
-        };
-
-        _lastSnapshot = new BillboardSnapshot(
-            descriptor.WorldPosition, descriptor.Size, descriptor.Rotation,
-            descriptor.FaceCamera, descriptor.Opacity,
-            _stagingSharedHandle, _stagingW, _stagingH);
-
         var services = GetSceneServices();
         if (services?.Draw == null)
             return effectDescription.DrawDescription with { Opacity = 0 };
 
+        _descriptorPool.Image = stagingBitmap;
+        _descriptorPool.SharedHandle = _stagingSharedHandle;
+        _descriptorPool.SharedWidth = _stagingW;
+        _descriptorPool.SharedHeight = _stagingH;
+        _descriptorPool.WorldPosition = new Vector3(x, y, z);
+        _descriptorPool.Size = size;
+        _descriptorPool.Rotation = new Vector3(rotX, rotY, rotZ);
+        _descriptorPool.FaceCamera = _item.FaceCamera;
+        _descriptorPool.Opacity = opacity;
+
         bool isNew;
         lock (_idLock)
         {
-            isNew = ApplyBillboard(services, descriptor);
+            isNew = ApplyBillboard(services, _descriptorPool);
         }
 
-        bool paramChanged = Interlocked.Exchange(ref _needsSceneTrigger, 0) != 0;
+        bool paramChanged = Interlocked.Exchange(ref _needsItemTrigger, 0) != 0;
 
         ForceRenderCurrentScene();
 
@@ -174,7 +144,7 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
         return effectDescription.DrawDescription with { Opacity = 0 };
     }
 
-    private bool PreRenderToStagingCore(ID2D1Image source, Vector2 baseSize)
+    private void PreRenderToStagingCore(ID2D1Image source, Vector2 baseSize)
     {
         int w = Math.Max(1, (int)Math.Ceiling((double)baseSize.X));
         int h = Math.Max(1, (int)Math.Ceiling((double)baseSize.Y));
@@ -198,10 +168,9 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
             if (bh > 0) h = bh;
         }
 
-        if (w <= 0 || h <= 0) return false;
+        if (w <= 0 || h <= 0) return;
 
         var current = _stagingBitmap;
-        bool created = false;
         if (current != null && (_stagingW != w || _stagingH != h))
         {
             Interlocked.Exchange(ref _expiredStagingBitmap, current);
@@ -219,13 +188,11 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
                 _stagingH = h;
                 _stagingSharedHandle = handle;
                 _stagingBitmap = current;
-                created = true;
             }
-            catch { return false; }
+            catch { return; }
         }
 
         DrawToStaging(current, source, hasBounds, bounds);
-        return created;
     }
 
     private void DrawToStaging(ID2D1Bitmap1 target, ID2D1Image source, bool hasBounds, Vortice.RawRectF bounds)
@@ -394,36 +361,6 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
         _input = newInput;
     }
 
-    private BillboardDescriptor BuildDescriptorFromSnapshot(
-        BillboardSnapshot? snap,
-        ID2D1Bitmap1 stagingBitmap,
-        nint stagingHandle)
-    {
-        if (snap != null)
-        {
-            var s = snap;
-            return new BillboardDescriptor
-            {
-                Image = stagingBitmap,
-                SharedHandle = stagingHandle,
-                SharedWidth = s.SharedWidth,
-                SharedHeight = s.SharedHeight,
-                WorldPosition = s.WorldPosition,
-                Size = s.Size,
-                Rotation = s.Rotation,
-                FaceCamera = s.FaceCamera,
-                Opacity = s.Opacity
-            };
-        }
-        return new BillboardDescriptor
-        {
-            Image = stagingBitmap,
-            SharedHandle = stagingHandle,
-            SharedWidth = _stagingW,
-            SharedHeight = _stagingH
-        };
-    }
-
     public void Dispose()
     {
         _disposed = true;
@@ -471,33 +408,7 @@ internal sealed class SceneIntegrationVideoEffectProcessor : IVideoEffectProcess
         if (services == null || _cachedDevicePointer == IntPtr.Zero || services.ContextPointer != _cachedDevicePointer)
             return;
 
-        var currentInput = _input;
-        if (currentInput == null) return;
-
-        var stagingBitmap = _stagingBitmap;
-        var stagingHandle = _stagingSharedHandle;
-
-        if (stagingBitmap == null || stagingHandle == IntPtr.Zero)
-        {
-            _item.TriggerUpdate();
-            return;
-        }
-
-        var snap = _lastSnapshot;
-        var descriptor = BuildDescriptorFromSnapshot(snap, stagingBitmap, stagingHandle);
-
-        bool isNew;
-        lock (_idLock)
-        {
-            isNew = ApplyBillboard(services, descriptor);
-        }
-
-        if (isNew)
-        {
-            try { ObjLoaderApi.ForceRender(e.InstanceId); } catch { }
-            _item.TriggerUpdate();
-            services.TriggerUpdate();
-        }
+        _item.TriggerUpdate();
     }
 
     private ISceneServices? GetSceneServices()

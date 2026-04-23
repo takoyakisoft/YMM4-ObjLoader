@@ -76,6 +76,7 @@ public sealed class ObjLoaderSource : IShapeSource2
     private bool _isDisposed;
     private TimelineItemSourceDescription _lastDesc = default!;
     private bool _hasDesc;
+    private long _lastBillboardVersion = -1;
 
     private static readonly ID3D11ShaderResourceView[] _emptySrvArray4 = new ID3D11ShaderResourceView[4];
     private static readonly ID3D11Buffer[] _emptyBufferArray1 = new ID3D11Buffer[1];
@@ -256,6 +257,7 @@ public sealed class ObjLoaderSource : IShapeSource2
         if (_sceneApi != null)
             _sceneDrawManager.UpdateFromApi(_sceneApi.DrawInternal);
 
+        long currentVersion = _sceneApi?.GetBillboardVersion() ?? 0L;
         bool hasBillboards = _sceneDrawManager.GetBillboards().Count > 0;
 
         RenderMainScene(_lastRenderWidth, _lastRenderHeight,
@@ -263,6 +265,7 @@ public sealed class ObjLoaderSource : IShapeSource2
             _lastTargetX, _lastTargetY, _lastTargetZ,
             _lastShadowValid, _lastRenderWorldId, hasBillboards);
 
+        _lastBillboardVersion = currentVersion;
         ClearResourceBindings();
         _sceneDrawManager.ClearDirtyFlag();
     }
@@ -310,9 +313,11 @@ public sealed class ObjLoaderSource : IShapeSource2
 
         bool activeWorldIdChanged = _lastActiveWorldId != stateToRender.ActiveWorldId;
         bool drawManagerDirty = _sceneDrawManager.IsDirty;
-        bool hasExternalOrBillboards = _sceneDrawManager.GetExternalObjects().Count > 0 || _sceneDrawManager.GetBillboards().Count > 0;
+        long currentBillboardVersion = _sceneApi?.GetBillboardVersion() ?? 0L;
+        bool billboardChanged = currentBillboardVersion != _lastBillboardVersion;
+        bool hasExternalObjects = _sceneDrawManager.GetExternalObjects().Count > 0;
         bool needsShadowRedraw = layersChanged || settingsChanged || shadowSettingsChanged || activeWorldIdChanged || cameraChanged;
-        bool needsSceneRedraw = needsShadowRedraw || cameraChanged || resized || _commandList == null || _layerStateBuilder.HasBoneAnimation || drawManagerDirty || hasExternalOrBillboards;
+        bool needsSceneRedraw = needsShadowRedraw || cameraChanged || resized || _commandList == null || _layerStateBuilder.HasBoneAnimation || drawManagerDirty || billboardChanged || hasExternalObjects;
 
         if (!needsSceneRedraw)
         {
@@ -330,7 +335,7 @@ public sealed class ObjLoaderSource : IShapeSource2
             stateToRender.TargetX, stateToRender.TargetY, stateToRender.TargetZ,
             needsShadowRedraw);
 
-        bool needsEnvMapRedraw = layersChanged || activeWorldIdChanged || settingsChanged || drawManagerDirty || hasExternalOrBillboards;
+        bool needsEnvMapRedraw = layersChanged || activeWorldIdChanged || settingsChanged || drawManagerDirty || billboardChanged || hasExternalObjects;
         RenderMainScene(sw, sh, stateToRender.CamX, stateToRender.CamY, stateToRender.CamZ,
             stateToRender.TargetX, stateToRender.TargetY, stateToRender.TargetZ,
             shadowValid, renderWorldId, needsEnvMapRedraw);
@@ -339,6 +344,7 @@ public sealed class ObjLoaderSource : IShapeSource2
         _lastRenderHeight = sh;
         _lastShadowValid = shadowValid;
         _lastRenderWorldId = renderWorldId;
+        _lastBillboardVersion = currentBillboardVersion;
 
         FinalizeCommandList(camX, camY, camZ, targetX, targetY, targetZ,
             settingsVersion, activeWorldId, settings);
